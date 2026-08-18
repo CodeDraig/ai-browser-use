@@ -84,7 +84,7 @@ class ChatOCIRaw(BaseChatModel):
 
 	@property
 	def name(self) -> str:
-		# Return a shorter name for telemetry (max 100 chars)
+		# Return a shorter display name (max 100 chars)
 		if len(self.model_id) > 90:
 			# Extract the model name from the OCID
 			parts = self.model_id.split('.')
@@ -100,7 +100,7 @@ class ChatOCIRaw(BaseChatModel):
 
 	@property
 	def model_name(self) -> str:
-		# Override for telemetry - return shorter name (max 100 chars)
+		# Return a shorter display name (max 100 chars)
 		if len(self.model_id) > 90:
 			# Extract the model name from the OCID
 			parts = self.model_id.split('.')

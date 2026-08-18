@@ -1,3 +1,5 @@
+from unittest.mock import Mock
+
 import pytest
 from pydantic import BaseModel, Field
 
@@ -8,8 +10,8 @@ from browser_use.dom.views import SerializedDOMState
 from browser_use.filesystem.file_system import FileSystem
 from browser_use.llm import SystemMessage, UserMessage
 from browser_use.llm.messages import ContentPartTextParam
+from browser_use.security import is_new_tab_page, match_url_with_domain_pattern
 from browser_use.tools.registry.service import Registry
-from browser_use.utils import is_new_tab_page, match_url_with_domain_pattern
 
 
 class SensitiveParams(BaseModel):
@@ -45,42 +47,41 @@ def test_replace_sensitive_data_with_missing_keys(registry, caplog):
 	params = SensitiveParams(text='Please enter <secret>username</secret> and <secret>password</secret>')
 
 	# Case 1: All keys present - both placeholders should be replaced
-	sensitive_data = {'username': 'user123', 'password': 'pass456'}
-	result = registry._replace_sensitive_data(params, sensitive_data)
+	sensitive_data = {'example.com': {'username': 'user123', 'password': 'pass456'}}
+	result = registry._replace_sensitive_data(params, sensitive_data, 'https://example.com')
 	assert result.text == 'Please enter user123 and pass456'
 	assert '<secret>' not in result.text  # No secret tags should remain
 
 	# Case 2: One key missing - only available key should be replaced
-	sensitive_data = {'username': 'user123'}  # password is missing
-	result = registry._replace_sensitive_data(params, sensitive_data)
+	sensitive_data = {'example.com': {'username': 'user123'}}  # password is missing
+	result = registry._replace_sensitive_data(params, sensitive_data, 'https://example.com')
 	assert result.text == 'Please enter user123 and <secret>password</secret>'
 	assert 'user123' in result.text
 	assert '<secret>password</secret>' in result.text  # Missing key's tag remains
 
 	# Case 3: Multiple keys missing - all tags should be preserved
 	sensitive_data = {}  # both keys missing
-	result = registry._replace_sensitive_data(params, sensitive_data)
+	result = registry._replace_sensitive_data(params, sensitive_data, 'https://example.com')
 	assert result.text == 'Please enter <secret>username</secret> and <secret>password</secret>'
 	assert '<secret>username</secret>' in result.text
 	assert '<secret>password</secret>' in result.text
 
 	# Case 4: One key empty - empty values are treated as missing
-	sensitive_data = {'username': 'user123', 'password': ''}
-	result = registry._replace_sensitive_data(params, sensitive_data)
+	sensitive_data = {'example.com': {'username': 'user123', 'password': ''}}
+	result = registry._replace_sensitive_data(params, sensitive_data, 'https://example.com')
 	assert result.text == 'Please enter user123 and <secret>password</secret>'
 	assert 'user123' in result.text
 	assert '<secret>password</secret>' in result.text  # Empty value's tag remains
 
 
-def test_simple_domain_specific_sensitive_data(registry, caplog):
-	"""Test the basic functionality of domain-specific sensitive data replacement"""
+def test_domain_specific_sensitive_data(registry, caplog):
+	"""Test domain-specific sensitive data replacement."""
 	# Create a simple Pydantic model with sensitive data placeholders
 	params = SensitiveParams(text='Please enter <secret>username</secret> and <secret>password</secret>')
 
 	# Simple test with directly instantiable values
 	sensitive_data = {
 		'example.com': {'username': 'example_user'},
-		'other_data': 'non_secret_value',  # Old format mixed with new
 	}
 
 	# Without a URL, domain-specific secrets should NOT be exposed
@@ -96,6 +97,22 @@ def test_simple_domain_specific_sensitive_data(registry, caplog):
 	assert 'example_user' in result.text  # Should be replaced with matching URL
 	assert '<secret>password</secret>' in result.text  # Password is still missing
 	assert '<secret>username</secret>' not in result.text  # Username tag should be replaced
+
+
+def test_domain_specific_totp_secret_is_generated(registry, monkeypatch):
+	params = SensitiveParams(text='<secret>login_bu_2fa_code</secret>')
+	totp = Mock()
+	totp.now.return_value = '123456'
+	monkeypatch.setattr('browser_use.tools.registry.service.pyotp.TOTP', Mock(return_value=totp))
+
+	result = registry._replace_sensitive_data(
+		params,
+		{'example.com': {'login_bu_2fa_code': 'seed'}},
+		'https://example.com/login',
+	)
+
+	assert result.text == '123456'
+	totp.now.assert_called_once_with()
 
 
 def test_match_url_with_domain_pattern():
@@ -226,7 +243,7 @@ def test_filter_sensitive_data(message_manager):
 	assert result.content == 'My username is admin and password is secret123'
 
 	# Case 2: All sensitive data is properly replaced
-	message_manager.sensitive_data = {'username': 'admin', 'password': 'secret123'}
+	message_manager.sensitive_data = {'example.com': {'username': 'admin', 'password': 'secret123'}}
 	result = message_manager._filter_sensitive_data(message)
 	assert '<secret>username</secret>' in result.content
 	assert '<secret>password</secret>' in result.content
@@ -238,7 +255,7 @@ def test_filter_sensitive_data(message_manager):
 	assert '<secret>password</secret>' in result.content[0].text
 
 	# Case 4: Test with empty values
-	message_manager.sensitive_data = {'username': 'admin', 'password': ''}
+	message_manager.sensitive_data = {'example.com': {'username': 'admin', 'password': ''}}
 	result = message_manager._filter_sensitive_data(message)
 	assert '<secret>username</secret>' in result.content
 	# Only username should be replaced since password is empty
@@ -291,7 +308,7 @@ def test_sensitive_data_filtered_from_action_results():
 	base_tmp = tempfile.gettempdir()
 	file_system_path = os.path.join(base_tmp, str(uuid.uuid4()))
 
-	sensitive_data: dict[str, str | dict[str, str]] = {'username': 'admin_user', 'password': 'secret_pass123'}
+	sensitive_data = {'example.com': {'username': 'admin_user', 'password': 'secret_pass123'}}
 
 	message_manager = MessageManager(
 		task='Login to the website',
@@ -365,8 +382,8 @@ def test_sensitive_data_filtered_from_action_results():
 	)
 
 
-def test_sensitive_data_filtered_with_domain_specific_format():
-	"""Test that domain-specific sensitive data format is also filtered from action results."""
+def test_sensitive_data_filtered_for_another_domain():
+	"""Test that values from another domain are filtered from action results."""
 	import os
 	import tempfile
 	import uuid
@@ -374,8 +391,7 @@ def test_sensitive_data_filtered_with_domain_specific_format():
 	base_tmp = tempfile.gettempdir()
 	file_system_path = os.path.join(base_tmp, str(uuid.uuid4()))
 
-	# Use domain-specific format
-	sensitive_data: dict[str, str | dict[str, str]] = {
+	sensitive_data = {
 		'example.com': {'api_key': 'sk-secret-api-key-12345'},
 	}
 

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import sys
-import time
 from contextlib import redirect_stderr, redirect_stdout
 from importlib.metadata import PackageNotFoundError, version
 from io import StringIO
@@ -16,45 +15,11 @@ def _browser_use_version() -> str:
 		return 'unknown'
 
 
-def _exit_code(result: int | str | None) -> int:
-	if result is None:
-		return 0
-	if isinstance(result, int):
-		return result
-	return 1
-
-
 def _set_harness_client_env() -> None:
 	import os
 
 	os.environ['BH_CLIENT'] = 'browser-use-cli'
 	os.environ['BH_CLIENT_VERSION'] = _browser_use_version()
-
-
-def _capture_via_harness(
-	*,
-	command: str,
-	start_time: float,
-	result: int | str | None = None,
-	error_message: str | None = None,
-) -> None:
-	try:
-		from browser_harness import telemetry as harness_telemetry
-
-		capture_cli_event = getattr(harness_telemetry, 'capture_cli_event', None)
-		if capture_cli_event is None:
-			return
-		_set_harness_client_env()
-		code = _exit_code(result)
-		capture_cli_event(
-			action='error' if code else 'completed',
-			command=command,
-			duration_seconds=time.monotonic() - start_time,
-			exit_code=code,
-			error_message=error_message,
-		)
-	except Exception:
-		pass
 
 
 def _run_mcp_stdio_server(module_name: str) -> None:
@@ -157,37 +122,25 @@ def _normalize_captured_cli_output(func, argv: list[str]) -> int:
 
 
 def _patch_browser_harness_cli_text() -> None:
-	from browser_harness import auth, run, telemetry
+	from browser_harness import auth, run
 
 	run.HELP = _as_browser_use_cli_text(run.HELP)
 	run.USAGE = _as_browser_use_cli_text(run.USAGE)
 
 	original_auth_cli = auth.run_auth_cli
-	original_telemetry_cli = telemetry.run_telemetry_cli
 
 	def run_auth_cli(argv: list[str]) -> int:
 		if any(arg in {'-h', '--help'} for arg in argv):
 			return _normalize_captured_cli_output(original_auth_cli, argv)
 		return original_auth_cli(argv)
 
-	def run_telemetry_cli(argv: list[str]) -> int:
-		if argv and argv != ['status'] and argv != ['enable'] and argv != ['disable']:
-			return _normalize_captured_cli_output(original_telemetry_cli, argv)
-		return original_telemetry_cli(argv)
-
 	auth.run_auth_cli = run_auth_cli
-	telemetry.run_telemetry_cli = run_telemetry_cli
-
-
-_delegated_to_harness = False
 
 
 def _run_browser_harness() -> int | None:
+	_set_harness_client_env()
 	from browser_harness import run
 
-	global _delegated_to_harness
-
-	_set_harness_client_env()
 	_patch_browser_harness_cli_text()
 	args = sys.argv[1:]
 	if args and args[0] == 'doctor' and args[1:]:
@@ -197,7 +150,6 @@ def _run_browser_harness() -> int | None:
 		if args[1:] != ['--fix-snap']:
 			print('usage: browser-use doctor [--fix-snap]', file=sys.stderr)
 			sys.exit(2)
-	_delegated_to_harness = True
 	run.main()
 	return None
 
@@ -335,25 +287,6 @@ _EMPTY_STDIN_MESSAGE = """browser-use received empty stdin. This CLI executes Py
   PY"""
 
 
-def _command_name(args: list[str]) -> str:
-	if '--cli-mcp' in args:
-		return 'cli-mcp'
-	if '--mcp' in args:
-		return 'mcp'
-	if args and args[0] == 'install':
-		return 'install'
-	if args and args[0] == 'init':
-		return 'init'
-	if '--template' in args or '-t' in args:
-		return 'init'
-	if args and args[0] == 'skill':
-		return 'skill'
-	legacy = _legacy_command(args)
-	if legacy is not None:
-		return f'legacy:{legacy}'
-	return args[0] if args else 'run'
-
-
 def _dispatch(args: list[str]) -> tuple[int | None, str]:
 	if '--cli-mcp' in args:
 		_run_cli_mcp_server()
@@ -371,7 +304,6 @@ def _dispatch(args: list[str]) -> tuple[int | None, str]:
 		from browser_use.skills.install import handle as handle_skill_command
 
 		return handle_skill_command(args[1:]), 'skill'
-
 	legacy = _legacy_command(args)
 	if legacy is not None:
 		print(_legacy_migration_message(legacy), file=sys.stderr)
@@ -400,61 +332,14 @@ def _dispatch(args: list[str]) -> tuple[int | None, str]:
 		return 2, args[0] if args else 'run'
 
 
-class _StderrTail:
-	"""Pass-through stderr wrapper that remembers the tail as error context."""
-
-	def __init__(self, wrapped):
-		self._wrapped = wrapped
-		self.tail = ''
-
-	def write(self, text):
-		self.tail = (self.tail + text)[-500:]
-		return self._wrapped.write(text)
-
-	def __getattr__(self, name):
-		return getattr(self._wrapped, name)
-
-
 def browser_use_tui_main() -> int | None:
 	print('browser-use-tui is deprecated; use browser-use instead.', file=sys.stderr)
 	return main()
 
 
 def main() -> int | None:
-	global _delegated_to_harness
-
-	_delegated_to_harness = False
 	args = sys.argv[1:]
-	start_time = time.monotonic()
-	command = _command_name(args)
-	stderr_tail = _StderrTail(sys.stderr)
-	sys.stderr = stderr_tail
-	try:
-		result, command = _dispatch(args)
-	except SystemExit as exc:
-		result = exc.code
-		if not _delegated_to_harness:
-			_capture_via_harness(
-				command=command,
-				start_time=start_time,
-				result=result,
-				error_message=str(result) if isinstance(result, str) else stderr_tail.tail.strip() or None,
-			)
-		raise
-	except Exception as exc:
-		if not _delegated_to_harness:
-			_capture_via_harness(command=command, start_time=start_time, result=1, error_message=str(exc))
-		raise
-	finally:
-		sys.stderr = stderr_tail._wrapped
-
-	if not _delegated_to_harness:
-		_capture_via_harness(
-			command=command,
-			start_time=start_time,
-			result=result,
-			error_message=(stderr_tail.tail.strip() or None) if _exit_code(result) else None,
-		)
+	result, _command = _dispatch(args)
 	return result
 
 

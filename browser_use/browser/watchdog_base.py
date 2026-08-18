@@ -2,6 +2,7 @@
 
 import asyncio
 import inspect
+import logging
 import time
 from collections.abc import Iterable
 from typing import Any, ClassVar
@@ -10,6 +11,8 @@ from bubus import BaseEvent, EventBus
 from pydantic import BaseModel, ConfigDict, Field
 
 from browser_use.browser.session import BrowserSession
+
+logger = logging.getLogger(__name__)
 
 
 class BaseWatchdog(BaseModel):
@@ -316,6 +319,4 @@ class BaseWatchdog(BaseModel):
 						except Exception:
 							pass  # Ignore errors during cleanup
 		except Exception as e:
-			from browser_use.utils import logger
-
 			logger.error(f'⚠️ Error during BrowserSession {self.__class__.__name__} garbage collection __del__(): {type(e)}: {e}')

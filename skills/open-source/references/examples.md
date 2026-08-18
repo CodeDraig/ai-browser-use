@@ -105,8 +105,10 @@ agent = Agent(
     task="Login to example.com",
     llm=llm,
     sensitive_data={
-        'x_user': 'my-username',       # All sites
-        'x_pass': 'my-password',       # All sites
+        'example.com': {
+            'x_user': 'my-username',
+            'x_pass': 'my-password',
+        },
     },
     browser=Browser(allowed_domains=['*.example.com']),
 )
@@ -116,13 +118,17 @@ agent = Agent(
 - Real values injected into form fields at execution time
 - Never appears in logs or LLM context
 
-### Per-Domain Credentials
+### Credentials for Multiple Domains
 
 ```python
 sensitive_data = {
-    'github_user': 'gh-username',
-    'github_pass': 'gh-password',
-    'gmail_user': 'gmail-address',
+    'github.com': {
+        'github_user': 'gh-username',
+        'github_pass': 'gh-password',
+    },
+    'mail.google.com': {
+        'gmail_user': 'gmail-address',
+    },
 }
 ```
 

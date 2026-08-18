@@ -5,19 +5,11 @@ Sets up environment variables to ensure tests never connect to production servic
 """
 
 import os
-import socketserver
 import tempfile
 from unittest.mock import AsyncMock
 
 import pytest
 from dotenv import load_dotenv
-from pytest_httpserver import HTTPServer
-
-# Fix for httpserver hanging on shutdown - prevent blocking on socket close
-# This prevents tests from hanging when shutting down HTTP servers
-socketserver.ThreadingMixIn.block_on_close = False
-# Also set daemon threads to prevent hanging
-socketserver.ThreadingMixIn.daemon_threads = True
 
 from browser_use.agent.views import AgentOutput
 from browser_use.llm import BaseChatModel
@@ -33,9 +25,7 @@ os.environ['SKIP_LLM_API_KEY_VERIFICATION'] = 'true'
 
 from bubus import BaseEvent
 
-from browser_use import Agent
 from browser_use.browser import BrowserProfile, BrowserSession
-from browser_use.sync.service import CloudSync
 
 
 @pytest.fixture(autouse=True)
@@ -50,8 +40,6 @@ def setup_test_environment():
 	original_env = {}
 	test_env_vars = {
 		'SKIP_LLM_API_KEY_VERIFICATION': 'true',
-		'ANONYMIZED_TELEMETRY': 'false',
-		'BROWSER_USE_CLOUD_SYNC': 'true',
 		'BROWSER_USE_CLOUD_API_URL': 'http://placeholder-will-be-replaced-by-specific-test-fixtures',
 		'BROWSER_USE_CLOUD_UI_URL': 'http://placeholder-will-be-replaced-by-specific-test-fixtures',
 		# Don't set BROWSER_USE_CONFIG_DIR anymore - let it use the default ~/.config/browseruse
@@ -173,43 +161,9 @@ async def browser_session():
 
 
 @pytest.fixture(scope='function')
-def cloud_sync(httpserver: HTTPServer):
-	"""
-	Create a CloudSync instance configured for testing.
-
-	This fixture creates a real CloudSync instance and sets up the test environment
-	to use the httpserver URLs.
-	"""
-
-	# Set up test environment
-	test_http_server_url = httpserver.url_for('')
-	os.environ['BROWSER_USE_CLOUD_API_URL'] = test_http_server_url
-	os.environ['BROWSER_USE_CLOUD_UI_URL'] = test_http_server_url
-	os.environ['BROWSER_USE_CLOUD_SYNC'] = 'true'
-
-	# Create CloudSync with test server URL
-	cloud_sync = CloudSync(
-		base_url=test_http_server_url,
-	)
-
-	return cloud_sync
-
-
-@pytest.fixture(scope='function')
 def mock_llm():
 	"""Create a mock LLM that just returns the done action if queried"""
 	return create_mock_llm(actions=None)
-
-
-@pytest.fixture(scope='function')
-def agent_with_cloud(browser_session, mock_llm, cloud_sync):
-	"""Create agent (cloud_sync parameter removed)."""
-	agent = Agent(
-		task='Test task',
-		llm=mock_llm,
-		browser_session=browser_session,
-	)
-	return agent
 
 
 @pytest.fixture(scope='function')

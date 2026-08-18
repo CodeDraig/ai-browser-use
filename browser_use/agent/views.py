@@ -25,9 +25,9 @@ from browser_use.dom.views import DEFAULT_INCLUDE_ATTRIBUTES, DOMInteractedEleme
 # from browser_use.dom.views import SelectorMap
 from browser_use.filesystem.file_system import FileSystemState
 from browser_use.llm.base import BaseChatModel
+from browser_use.security import SensitiveData, collect_sensitive_data_values, redact_sensitive_string
 from browser_use.tokens.views import UsageSummary
 from browser_use.tools.registry.views import ActionModel
-from browser_use.utils import collect_sensitive_data_values, redact_sensitive_string
 
 logger = logging.getLogger(__name__)
 
@@ -331,7 +331,7 @@ class ActionResult(BaseModel):
 	extracted_content: str | None = None
 	include_extracted_content_only_once: bool = False  # Whether the extracted content should be used to update the read_state
 
-	# Metadata for observability (e.g., click coordinates)
+	# Action metadata (e.g., click coordinates)
 	metadata: dict | None = None
 
 	# Deprecated
@@ -508,7 +508,7 @@ class AgentHistory(BaseModel):
 				elements.append(None)
 		return elements
 
-	def _filter_sensitive_data_from_string(self, value: str, sensitive_data: dict[str, str | dict[str, str]] | None) -> str:
+	def _filter_sensitive_data_from_string(self, value: str, sensitive_data: SensitiveData | None) -> str:
 		"""Filter out sensitive data from a string value"""
 		if not sensitive_data:
 			return value
@@ -521,9 +521,7 @@ class AgentHistory(BaseModel):
 
 		return redact_sensitive_string(value, sensitive_values)
 
-	def _filter_sensitive_data_from_dict(
-		self, data: dict[str, Any], sensitive_data: dict[str, str | dict[str, str]] | None
-	) -> dict[str, Any]:
+	def _filter_sensitive_data_from_dict(self, data: dict[str, Any], sensitive_data: SensitiveData | None) -> dict[str, Any]:
 		"""Recursively filter sensitive data from a dictionary"""
 		if not sensitive_data:
 			return data
@@ -547,7 +545,7 @@ class AgentHistory(BaseModel):
 				filtered_data[key] = value
 		return filtered_data
 
-	def model_dump(self, sensitive_data: dict[str, str | dict[str, str]] | None = None, **kwargs) -> dict[str, Any]:
+	def model_dump(self, sensitive_data: SensitiveData | None = None, **kwargs) -> dict[str, Any]:
 		"""Custom serialization handling circular references and filtering sensitive data"""
 
 		# Handle action serialization
@@ -624,7 +622,7 @@ class AgentHistoryList(BaseModel, Generic[AgentStructuredOutput]):
 		"""Representation of the AgentHistoryList object"""
 		return self.__str__()
 
-	def save_to_file(self, filepath: str | Path, sensitive_data: dict[str, str | dict[str, str]] | None = None) -> None:
+	def save_to_file(self, filepath: str | Path, sensitive_data: SensitiveData | None = None) -> None:
 		"""Save history to JSON file with proper serialization and optional sensitive data filtering"""
 		try:
 			Path(filepath).parent.mkdir(parents=True, exist_ok=True)

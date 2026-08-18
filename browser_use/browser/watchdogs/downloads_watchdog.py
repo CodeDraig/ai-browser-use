@@ -29,7 +29,7 @@ from browser_use.browser.events import (
 	TabCreatedEvent,
 )
 from browser_use.browser.watchdog_base import BaseWatchdog
-from browser_use.utils import create_task_with_error_handling
+from browser_use.runtime import create_task_with_error_handling
 
 if TYPE_CHECKING:
 	pass

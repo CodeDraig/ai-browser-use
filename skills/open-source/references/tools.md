@@ -180,7 +180,7 @@ def advanced_tool() -> ActionResult:
 | `is_done` | False | Tool completes entire task |
 | `success` | None | Task success (only with `is_done=True`) |
 | `attachments` | None | Files to show user |
-| `metadata` | None | Debug/observability data |
+| `metadata` | None | Debug/action data |
 
 ### Context Control Strategy
 

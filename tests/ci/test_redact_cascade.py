@@ -1,6 +1,6 @@
 """Tests for redact_sensitive_string to ensure no cascading/corruption."""
 
-from browser_use.utils import redact_sensitive_string
+from browser_use.security import redact_sensitive_string
 
 
 def test_normal_redaction():

@@ -885,24 +885,39 @@ class TestFileSystemEdgeCases:
 			assert fs.base_dir == path_obj
 			fs.nuke()
 
-	def test_filesystem_recreates_data_dir(self):
-		"""Test that FileSystem recreates data directory if it exists."""
+	async def test_filesystem_reuse_preserves_existing_files_without_indexing_them(self):
+		"""Reusing a path must preserve prior outputs without reopening them through the API."""
 		with tempfile.TemporaryDirectory() as tmp_dir:
-			# Create filesystem
 			fs1 = FileSystem(base_dir=tmp_dir, create_default_files=True)
 			data_dir = fs1.data_dir
-
-			# Add a custom file
 			custom_file = data_dir / 'custom.txt'
 			custom_file.write_text('custom content')
-			assert custom_file.exists()
+			todo_file = data_dir / 'todo.md'
+			todo_file.write_text('existing todo')
+			existing_extraction = data_dir / 'extracted_content_0.md'
+			existing_extraction.write_text('old extraction')
+			symlink_target = data_dir / 'preserved-target.md'
+			symlink_target.write_text('symlink target')
+			extraction_symlink = data_dir / 'extracted_content_1.md'
+			extraction_symlink.symlink_to(symlink_target)
 
-			# Create another filesystem with same base_dir (should clean data_dir)
 			fs2 = FileSystem(base_dir=tmp_dir, create_default_files=True)
+			new_extraction = await fs2.save_extracted_content('new extraction')
 
-			# Custom file should be gone, default files should exist
-			assert not custom_file.exists()
-			assert (fs2.data_dir / 'todo.md').exists()
+			assert custom_file.read_text() == 'custom content'
+			assert todo_file.read_text() == 'existing todo'
+			assert existing_extraction.read_text() == 'old extraction'
+			assert extraction_symlink.is_symlink()
+			assert symlink_target.read_text() == 'symlink target'
+			assert fs2.get_file('custom.txt') is None
+			assert fs2.get_file('todo.md') is None
+			assert fs2.get_file('extracted_content_0.md') is None
+			assert fs2.get_file('extracted_content_1.md') is None
+			assert new_extraction == 'extracted_content_2.md'
+			new_extraction_file = fs2.get_file(new_extraction)
+			assert new_extraction_file is not None
+			assert new_extraction_file.content == 'new extraction'
+			assert fs2.list_files() == ['extracted_content_2.md']
 
 			fs2.nuke()
 

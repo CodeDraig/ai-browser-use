@@ -4,13 +4,14 @@ Handles Gmail API authentication, email reading, and 2FA code extraction.
 This service provides a clean interface for agents to interact with Gmail.
 """
 
+import asyncio
 import base64
 import logging
 import os
+import tempfile
 from pathlib import Path
 from typing import Any
 
-import anyio
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -74,6 +75,28 @@ class GmailService:
 		"""Check if Gmail service is authenticated"""
 		return self._authenticated and self.service is not None
 
+	def _save_token_file(self, token_json: str) -> None:
+		"""Atomically save OAuth credentials with owner-only permissions."""
+		token_path = Path(self.token_file)
+		token_path.parent.mkdir(parents=True, exist_ok=True)
+		temp_path: str | None = None
+		try:
+			fd, temp_path = tempfile.mkstemp(prefix=f'.{token_path.name}.', dir=token_path.parent)
+			os.chmod(temp_path, 0o600)
+			with os.fdopen(fd, 'w', encoding='utf-8') as token_handle:
+				token_handle.write(token_json)
+				token_handle.flush()
+				os.fsync(token_handle.fileno())
+			os.replace(temp_path, token_path)
+			temp_path = None
+			os.chmod(token_path, 0o600)
+		finally:
+			if temp_path is not None:
+				try:
+					os.unlink(temp_path)
+				except FileNotFoundError:
+					pass
+
 	async def authenticate(self) -> bool:
 		"""
 		Handle OAuth authentication and token management
@@ -94,9 +117,13 @@ class GmailService:
 				logger.info('✅ Gmail API ready with access token!')
 				return True
 
+			# Never follow a token-path symlink: a newly authorized token will atomically replace it.
+			token_path = Path(self.token_file)
+			token_path_is_symlink = token_path.is_symlink()
+
 			# Original file-based authentication flow
-			# Try to load existing tokens
-			if os.path.exists(self.token_file):
+			# Try to load existing regular token files.
+			if not token_path_is_symlink and token_path.exists():
 				self.creds = Credentials.from_authorized_user_file(str(self.token_file), self.SCOPES)
 				logger.debug('📁 Loaded existing tokens')
 
@@ -122,9 +149,10 @@ class GmailService:
 					# Use specific redirect URI to match OAuth credentials
 					self.creds = flow.run_local_server(port=8080, open_browser=True)
 
-				# Save tokens for next time
-				await anyio.Path(self.token_file).write_text(self.creds.to_json())
-				logger.info(f'💾 Tokens saved to {self.token_file}')
+			# Persist every valid file-based credential through the restrictive atomic writer.
+			# This tightens old permissive files and replaces token-path symlinks without following them.
+			await asyncio.to_thread(self._save_token_file, self.creds.to_json())
+			logger.info(f'💾 Tokens saved to {self.token_file}')
 
 			# Build Gmail service
 			self.service = build('gmail', 'v1', credentials=self.creds)

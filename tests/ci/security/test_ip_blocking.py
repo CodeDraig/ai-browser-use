@@ -259,8 +259,9 @@ class TestIPBlockingWithProhibitedDomains:
 		# Prohibited domain should be blocked
 		assert watchdog._is_url_allowed('https://example.com') is False
 
-		# IP in prohibited list should be blocked (by prohibited_domains, not IP blocking)
-		assert watchdog._is_url_allowed('http://8.8.8.8/') is False
+		# Scheme-less patterns default to HTTPS, including IP host patterns.
+		assert watchdog._is_url_allowed('https://8.8.8.8/') is False
+		assert watchdog._is_url_allowed('http://8.8.8.8/') is True
 
 		# Other IPs should be allowed (IP blocking is off)
 		assert watchdog._is_url_allowed('http://192.168.1.1/') is True

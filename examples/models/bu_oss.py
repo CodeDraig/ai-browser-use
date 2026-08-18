@@ -10,13 +10,6 @@ from browser_use import Agent, ChatBrowserUse
 
 load_dotenv()
 
-try:
-	from lmnr import Laminar
-
-	Laminar.initialize()
-except ImportError:
-	pass
-
 # Point to local llm-use server for testing
 llm = ChatBrowserUse(
 	model='browser-use/bu-30b-a3b-preview',  # BU Open Source Model!!

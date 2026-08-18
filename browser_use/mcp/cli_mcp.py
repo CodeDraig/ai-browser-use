@@ -15,7 +15,7 @@ import mcp.types as types
 from mcp.server import NotificationOptions, Server
 from mcp.server.models import InitializationOptions
 
-from browser_use.utils import get_browser_use_version
+from browser_use.version import get_browser_use_version
 
 _NAMESPACE_IMPORTS = (
 	'from browser_harness.admin import ('

@@ -6,11 +6,6 @@ import os
 from typing import Generic, TypeVar
 
 import anyio
-
-try:
-	from lmnr import Laminar  # type: ignore
-except ImportError:
-	Laminar = None  # type: ignore
 from pydantic import BaseModel
 
 from browser_use.agent.views import ActionModel, ActionResult
@@ -31,10 +26,13 @@ from browser_use.browser.events import (
 )
 from browser_use.browser.views import BrowserError
 from browser_use.dom.service import EnhancedDOMTreeNode
+from browser_use.dom.utils import sanitize_surrogates
 from browser_use.filesystem.file_system import FileSystem
 from browser_use.llm.base import BaseChatModel
 from browser_use.llm.messages import SystemMessage, UserMessage
-from browser_use.observability import observe_debug
+from browser_use.logging_utils import time_execution_sync
+from browser_use.runtime import create_task_with_error_handling
+from browser_use.security import SensitiveData
 from browser_use.tools.registry.service import Registry
 from browser_use.tools.utils import get_click_description
 from browser_use.tools.views import (
@@ -59,7 +57,6 @@ from browser_use.tools.views import (
 	SwitchTabAction,
 	UploadFileAction,
 )
-from browser_use.utils import create_task_with_error_handling, sanitize_surrogates, time_execution_sync
 
 logger = logging.getLogger(__name__)
 
@@ -163,21 +160,16 @@ def _coerce_valid_action_timeout(value: float | None) -> float:
 	return float(value)
 
 
-def _detect_sensitive_key_name(text: str, sensitive_data: dict[str, str | dict[str, str]] | None) -> str | None:
+def _detect_sensitive_key_name(text: str, sensitive_data: SensitiveData | None) -> str | None:
 	"""Detect which sensitive key name corresponds to the given text value."""
 	if not sensitive_data or not text:
 		return None
 
 	# Collect all sensitive values and their keys
-	for domain_or_key, content in sensitive_data.items():
-		if isinstance(content, dict):
-			# New format: {domain: {key: value}}
-			for key, value in content.items():
-				if value and value == text:
-					return key
-		elif content:  # Old format: {key: value}
-			if content == text:
-				return domain_or_key
+	for domain_values in sensitive_data.values():
+		for key, value in domain_values.items():
+			if value and value == text:
+				return key
 
 	return None
 
@@ -779,7 +771,7 @@ class Tools(Generic[Context]):
 			params: InputTextAction,
 			browser_session: BrowserSession,
 			has_sensitive_data: bool = False,
-			sensitive_data: dict[str, str | dict[str, str]] | None = None,
+			sensitive_data: SensitiveData | None = None,
 		):
 			# Look up the node from the selector map
 			node = await browser_session.get_element_by_index(params.index)
@@ -2163,14 +2155,13 @@ Validated Code (after quote fixing):
 		logger.debug(f'Coordinate clicking {"enabled" if enabled else "disabled"}')
 
 	# Act --------------------------------------------------------------------
-	@observe_debug(ignore_input=True, ignore_output=True, name='act')
 	@time_execution_sync('--act')
 	async def act(
 		self,
 		action: ActionModel,
 		browser_session: BrowserSession,
 		page_extraction_llm: BaseChatModel | None = None,
-		sensitive_data: dict[str, str | dict[str, str]] | None = None,
+		sensitive_data: SensitiveData | None = None,
 		available_file_paths: list[str] | None = None,
 		file_system: FileSystem | None = None,
 		extraction_schema: dict | None = None,
@@ -2189,61 +2180,38 @@ Validated Code (after quote fixing):
 
 		for action_name, params in action.model_dump(exclude_unset=True).items():
 			if params is not None:
-				# Use Laminar span if available, otherwise use no-op context manager
-				if Laminar is not None:
-					span_context = Laminar.start_as_current_span(
-						name=action_name,
-						input={
-							'action': action_name,
-							'params': params,
-						},
-						span_type='TOOL',
+				try:
+					result = await asyncio.wait_for(
+						self.registry.execute_action(
+							action_name=action_name,
+							params=params,
+							browser_session=browser_session,
+							page_extraction_llm=page_extraction_llm,
+							file_system=file_system,
+							sensitive_data=sensitive_data,
+							available_file_paths=available_file_paths,
+							extraction_schema=extraction_schema,
+						),
+						timeout=timeout_s,
 					)
-				else:
-					# No-op context manager when lmnr is not available
-					from contextlib import nullcontext
-
-					span_context = nullcontext()
-
-				with span_context:
-					try:
-						result = await asyncio.wait_for(
-							self.registry.execute_action(
-								action_name=action_name,
-								params=params,
-								browser_session=browser_session,
-								page_extraction_llm=page_extraction_llm,
-								file_system=file_system,
-								sensitive_data=sensitive_data,
-								available_file_paths=available_file_paths,
-								extraction_schema=extraction_schema,
-							),
-							timeout=timeout_s,
+				except BrowserError as e:
+					logger.error(f'❌ Action {action_name} failed with BrowserError: {str(e)}')
+					result = handle_browser_error(e)
+				except TimeoutError:
+					logger.error(
+						f'❌ Action {action_name} hit the per-action timeout ({timeout_s:.0f}s) '
+						f'— likely an unresponsive CDP connection. Returning error so the agent can recover.'
+					)
+					result = ActionResult(
+						error=(
+							f'Action {action_name} timed out after {timeout_s:.0f}s. '
+							f'The browser may be unresponsive (dead CDP WebSocket). '
+							f'Try again or a different approach.'
 						)
-					except BrowserError as e:
-						logger.error(f'❌ Action {action_name} failed with BrowserError: {str(e)}')
-						result = handle_browser_error(e)
-					except TimeoutError:
-						# Covers both the per-action asyncio.wait_for cap and any inner
-						# TimeoutError that bubbled out of the handler.
-						logger.error(
-							f'❌ Action {action_name} hit the per-action timeout ({timeout_s:.0f}s) '
-							f'— likely an unresponsive CDP connection. Returning error so the agent can recover.'
-						)
-						result = ActionResult(
-							error=(
-								f'Action {action_name} timed out after {timeout_s:.0f}s. '
-								f'The browser may be unresponsive (dead CDP WebSocket). '
-								f'Try again or a different approach.'
-							)
-						)
-					except Exception as e:
-						# Log the original exception with traceback for observability
-						logger.error(f"Action '{action_name}' failed with error: {str(e)}")
-						result = ActionResult(error=str(e))
-
-					if Laminar is not None:
-						Laminar.set_span_output(result)
+					)
+				except Exception as e:
+					logger.error(f"Action '{action_name}' failed with error: {str(e)}")
+					result = ActionResult(error=str(e))
 
 				if isinstance(result, str):
 					return ActionResult(extracted_content=result)
@@ -2303,7 +2271,7 @@ Validated Code (after quote fixing):
 				# Create the action model instance
 				action_model = DynamicActionModel(**{name: params_instance})
 
-				# Call act() which has all the error handling, result normalization, and observability
+				# Call act() which has all the error handling and result normalization
 				# browser_session is passed as positional argument (required by act())
 				return await self.act(action=action_model, browser_session=browser_session, **special_kwargs)  # type: ignore
 

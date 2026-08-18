@@ -17,7 +17,7 @@ if not secret_key:
 	secret_key = 'JBSWY3DPEHPK3PXP'
 
 
-sensitive_data = {'bu_2fa_code': secret_key}
+sensitive_data = {'authenticationtest.com': {'bu_2fa_code': secret_key}}
 
 
 task = """

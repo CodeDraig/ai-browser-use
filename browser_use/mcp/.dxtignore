@@ -149,7 +149,6 @@ Makefile
 .venv/lib/python*/site-packages/stagehand*/
 .venv/lib/python*/site-packages/browserbase*/
 .venv/lib/python*/site-packages/langchain*/
-.venv/lib/python*/site-packages/lmnr*/
 .venv/lib/python*/site-packages/pillow*/
 .venv/lib/python*/site-packages/PIL/
 .venv/lib/python*/site-packages/datamodel_code_generator*/

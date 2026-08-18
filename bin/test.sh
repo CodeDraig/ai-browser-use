@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# This script is used to run all the main project tests that run on CI via .github/workflows/test.yaml.
+# This script runs the main project test suite locally.
 # Usage:
 #   $ ./bin/test.sh
 

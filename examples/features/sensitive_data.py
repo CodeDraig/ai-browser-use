@@ -15,16 +15,11 @@ llm = ChatOpenAI(
 	model='gpt-4.1',
 	temperature=0.0,
 )
-# Simple case: the model will see x_name and x_password, but never the actual values.
-# sensitive_data = {'x_name': 'my_x_name', 'x_password': 'my_x_password'}
-
-# Advanced case: domain-specific credentials with reusable data
 # Define a single credential set that can be reused
 company_credentials: dict[str, str] = {'telephone': '9123456789', 'email': 'user@example.com', 'name': 'John Doe'}
 
 # Map the same credentials to multiple domains for secure access control
-# Type annotation to satisfy pyright
-sensitive_data: dict[str, str | dict[str, str]] = {
+sensitive_data: dict[str, dict[str, str]] = {
 	# 'https://example.com': company_credentials,
 	# 'https://admin.example.com': company_credentials,
 	# 'https://*.example-staging.com': company_credentials,

@@ -360,9 +360,6 @@ class FileSystem:
 
 		# Create and use a dedicated subfolder for all operations
 		self.data_dir = self.base_dir / DEFAULT_FILE_SYSTEM_PATH
-		if self.data_dir.exists():
-			# clean the data directory
-			shutil.rmtree(self.data_dir)
 		self.data_dir.mkdir(exist_ok=True)
 
 		self._file_types: dict[str, type[BaseFile]] = {
@@ -395,6 +392,10 @@ class FileSystem:
 	def _create_default_files(self) -> None:
 		"""Create default results and todo files"""
 		for full_filename in self.default_files:
+			# Reusing a filesystem path must not overwrite or import prior output.
+			# Existing disk files remain deliberately outside this instance's index.
+			if (self.data_dir / full_filename).exists():
+				continue
 			name_without_ext, extension = self._parse_filename(full_filename)
 			file_class = self._get_file_type_class(extension)
 			if not file_class:
@@ -803,8 +804,14 @@ class FileSystem:
 
 	async def save_extracted_content(self, content: str) -> str:
 		"""Save extracted content to a numbered file"""
-		initial_filename = f'extracted_content_{self.extracted_content_count}'
-		extracted_filename = f'{initial_filename}.md'
+		while True:
+			initial_filename = f'extracted_content_{self.extracted_content_count}'
+			extracted_filename = f'{initial_filename}.md'
+			extracted_path = self.data_dir / extracted_filename
+			if extracted_filename not in self.files and not os.path.lexists(extracted_path):
+				break
+			self.extracted_content_count += 1
+
 		file_obj = MarkdownFile(name=initial_filename)
 		await file_obj.write(content, self.data_dir)
 		self.files[extracted_filename] = file_obj

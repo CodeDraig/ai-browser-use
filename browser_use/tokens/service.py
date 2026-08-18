@@ -17,6 +17,7 @@ from dotenv import load_dotenv
 
 from browser_use.llm.base import BaseChatModel
 from browser_use.llm.views import ChatInvokeUsage
+from browser_use.runtime import create_task_with_error_handling
 from browser_use.tokens.custom_pricing import CUSTOM_MODEL_PRICING
 from browser_use.tokens.mappings import MODEL_TO_LITELLM
 from browser_use.tokens.openrouter_pricing import get_openrouter_model_pricing, is_openrouter_pricing_model
@@ -29,7 +30,6 @@ from browser_use.tokens.views import (
 	TokenUsageEntry,
 	UsageSummary,
 )
-from browser_use.utils import create_task_with_error_handling
 
 load_dotenv()
 

@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any
 
 from cdp_use.cdp.target import AttachedToTargetEvent, DetachedFromTargetEvent, SessionID, TargetID
 
-from browser_use.utils import create_task_with_error_handling
+from browser_use.runtime import create_task_with_error_handling
 
 if TYPE_CHECKING:
 	from browser_use.browser.session import BrowserSession, CDPSession, Target

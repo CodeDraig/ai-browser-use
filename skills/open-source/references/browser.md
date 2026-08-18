@@ -146,7 +146,9 @@ agent = Agent(
     task="Login to my account",
     llm=llm,
     sensitive_data={
-        'google_bu_2fa_code': 'JBSWY3DPEHPK3PXP'  # TOTP secret
+        'accounts.google.com': {
+            'google_bu_2fa_code': 'JBSWY3DPEHPK3PXP',  # TOTP secret
+        },
     },
 )
 ```

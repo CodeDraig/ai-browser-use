@@ -119,14 +119,13 @@ async def test_provider_prefixed_model_forwarded_in_payload(httpserver):
 	body = request.get_json()
 	assert body['model'] == 'anthropic/claude-sonnet-4-6'
 	assert body['request_type'] == 'browser_agent'
+	assert body['anonymized_telemetry'] is False
 
 
 # --- Agent screenshot auto-config -------------------------------------------
 
 
-# Both the classic and beta agents auto-config the Claude screenshot size, so both
-# must strip the provider prefix for gateway ids.
-@pytest.mark.parametrize('agent_path', ['classic', 'beta'])
+# The Agent strips the provider prefix for gateway model ids.
 @pytest.mark.parametrize(
 	'model,expected_size',
 	[
@@ -137,11 +136,8 @@ async def test_provider_prefixed_model_forwarded_in_payload(httpserver):
 		('openai/gpt-5.5', None),
 	],
 )
-def test_claude_sonnet_screenshot_autoconfig_through_gateway(agent_path, model, expected_size):
-	if agent_path == 'classic':
-		from browser_use.agent.service import Agent
-	else:
-		from browser_use.beta import Agent
+def test_claude_sonnet_screenshot_autoconfig_through_gateway(model, expected_size):
+	from browser_use.agent.service import Agent
 
 	llm = ChatBrowserUse(model=model, api_key=TEST_API_KEY)
 	agent = Agent(task='test', llm=llm)

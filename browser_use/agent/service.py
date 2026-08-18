@@ -1,7 +1,6 @@
 import asyncio
 import gc
 import inspect
-import json
 import logging
 import re
 import tempfile
@@ -9,20 +8,12 @@ import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Generic, Literal, TypeVar, cast
-from urllib.parse import urlparse
 
 if TYPE_CHECKING:
 	from browser_use.skills.views import Skill
 
 from dotenv import load_dotenv
 
-from browser_use.agent.cloud_events import (
-	CreateAgentOutputFileEvent,
-	CreateAgentSessionEvent,
-	CreateAgentStepEvent,
-	CreateAgentTaskEvent,
-	UpdateAgentTaskEvent,
-)
 from browser_use.agent.message_manager.utils import save_conversation
 from browser_use.llm.base import BaseChatModel
 from browser_use.llm.exceptions import ModelOutputTruncatedError, ModelProviderError, ModelRateLimitError
@@ -44,6 +35,11 @@ from browser_use.agent.message_manager.service import (
 	MessageManager,
 )
 from browser_use.agent.prompts import SystemPrompt
+from browser_use.agent.url_detection import (
+	is_placeholder_url,
+	sanitize_url_candidate,
+	substitute_url_candidates,
+)
 from browser_use.agent.views import (
 	ActionResult,
 	AgentError,
@@ -67,21 +63,12 @@ from browser_use.browser.views import BrowserStateSummary
 from browser_use.config import CONFIG
 from browser_use.dom.views import DOMInteractedElement, MatchLevel
 from browser_use.filesystem.file_system import FileSystem
-from browser_use.observability import observe, observe_debug
-from browser_use.telemetry.service import ProductTelemetry
-from browser_use.telemetry.views import AgentTelemetryEvent
+from browser_use.logging_utils import log_pretty_path, time_execution_async, time_execution_sync
+from browser_use.runtime import SignalHandler
+from browser_use.security import SensitiveData, warn_sensitive_data_domain_constraints
 from browser_use.tools.registry.views import ActionModel
 from browser_use.tools.service import Tools
-from browser_use.utils import (
-	URL_PATTERN,
-	_log_pretty_path,
-	check_latest_browser_use_version,
-	get_browser_use_version,
-	is_placeholder_url,
-	sanitize_url_candidate,
-	time_execution_async,
-	time_execution_sync,
-)
+from browser_use.version import check_latest_browser_use_version, get_browser_use_version
 
 logger = logging.getLogger(__name__)
 
@@ -147,7 +134,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		skills: list[str | Literal['*']] | None = None,  # Alias for skill_ids
 		skill_service: Any | None = None,
 		# Initial agent run parameters
-		sensitive_data: dict[str, str | dict[str, str]] | None = None,
+		sensitive_data: SensitiveData | None = None,
 		initial_actions: list[dict[str, dict[str, Any]]] | None = None,
 		# Cloud Callbacks
 		register_new_step_callback: (
@@ -529,63 +516,17 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			max_clickable_elements_length=self.settings.max_clickable_elements_length,
 		)
 
-		if self.sensitive_data:
-			# Check if sensitive_data has domain-specific credentials
-			has_domain_specific_credentials = any(isinstance(v, dict) for v in self.sensitive_data.values())
-
-			# If no allowed_domains are configured, show a security warning
-			if not self.browser_profile.allowed_domains:
-				self.logger.warning(
-					'⚠️ Agent(sensitive_data=••••••••) was provided but Browser(allowed_domains=[...]) is not locked down! ⚠️\n'
-					'          ☠️ If the agent visits a malicious website and encounters a prompt-injection attack, your sensitive_data may be exposed!\n\n'
-					'   \n'
-				)
-
-			# If we're using domain-specific credentials, validate domain patterns
-			elif has_domain_specific_credentials:
-				# For domain-specific format, ensure all domain patterns are included in allowed_domains
-				domain_patterns = [k for k, v in self.sensitive_data.items() if isinstance(v, dict)]
-
-				# Validate each domain pattern against allowed_domains
-				for domain_pattern in domain_patterns:
-					is_allowed = False
-					for allowed_domain in self.browser_profile.allowed_domains:
-						# Special cases that don't require URL matching
-						if domain_pattern == allowed_domain or allowed_domain == '*':
-							is_allowed = True
-							break
-
-						# Need to create example URLs to compare the patterns
-						# Extract the domain parts, ignoring scheme
-						pattern_domain = domain_pattern.split('://')[-1] if '://' in domain_pattern else domain_pattern
-						allowed_domain_part = allowed_domain.split('://')[-1] if '://' in allowed_domain else allowed_domain
-
-						# Check if pattern is covered by an allowed domain
-						# Example: "google.com" is covered by "*.google.com"
-						if pattern_domain == allowed_domain_part or (
-							allowed_domain_part.startswith('*.')
-							and (
-								pattern_domain == allowed_domain_part[2:]
-								or pattern_domain.endswith('.' + allowed_domain_part[2:])
-							)
-						):
-							is_allowed = True
-							break
-
-					if not is_allowed:
-						self.logger.warning(
-							f'⚠️ Domain pattern "{domain_pattern}" in sensitive_data is not covered by any pattern in allowed_domains={self.browser_profile.allowed_domains}\n'
-							f'   This may be a security risk as credentials could be used on unintended domains.'
-						)
+		warn_sensitive_data_domain_constraints(
+			self.logger,
+			self.sensitive_data,
+			self.browser_profile.allowed_domains,
+		)
 
 		# Callbacks
 		self.register_new_step_callback = register_new_step_callback
 		self.register_done_callback = register_done_callback
 		self.register_should_stop_callback = register_should_stop_callback
 		self.register_external_agent_status_raise_error_callback = register_external_agent_status_raise_error_callback
-
-		# Telemetry
-		self.telemetry = ProductTelemetry()
 
 		# Event bus with WAL persistence
 		# Default to ~/.config/browseruse/events/{agent_session_id}.jsonl
@@ -594,7 +535,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 		if self.settings.save_conversation_path:
 			self.settings.save_conversation_path = Path(self.settings.save_conversation_path).expanduser().resolve()
-			self.logger.info(f'💬 Saving conversation to {_log_pretty_path(self.settings.save_conversation_path)}')
+			self.logger.info(f'💬 Saving conversation to {log_pretty_path(self.settings.save_conversation_path)}')
 
 		# Initialize download tracking
 		assert self.browser_session is not None, 'BrowserSession is not set up'
@@ -1024,7 +965,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		if self.state.paused:
 			raise InterruptedError
 
-	@observe(name='agent.step', ignore_output=True, ignore_input=True)
 	@time_execution_async('--step')
 	async def step(self, step_info: AgentStepInfo | None = None) -> None:
 		"""Execute one step of the task"""
@@ -1088,7 +1028,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		# Always take screenshots for all steps
 		self.logger.debug('📸 Requesting browser state with include_screenshot=True')
 		browser_state_summary = await self.browser_session.get_browser_state_summary(
-			include_screenshot=True,  # always capture even if use_vision=False so that cloud sync is useful (it's fast now anyway)
+			include_screenshot=True,
 			include_recent_events=self.include_recent_events,
 		)
 		if browser_state_summary.screenshot:
@@ -1166,7 +1106,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			step_info=step_info,
 		)
 
-	@observe_debug(ignore_input=True, name='get_next_action')
 	async def _get_next_action(self, browser_state_summary: BrowserStateSummary) -> None:
 		"""Execute LLM interaction with retry logic and handle callbacks"""
 		input_messages = self._message_manager.get_messages()
@@ -1179,14 +1118,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				self._get_model_output_with_retry(input_messages), timeout=self.settings.llm_timeout
 			)
 		except TimeoutError:
-
-			@observe(name='_llm_call_timed_out_with_input')
-			async def _log_model_input_to_lmnr(input_messages: list[BaseMessage]) -> None:
-				"""Log the model input"""
-				pass
-
-			await _log_model_input_to_lmnr(input_messages)
-
 			raise TimeoutError(
 				f'LLM call timed out after {self.settings.llm_timeout} seconds. Keep your thinking and output short.'
 			)
@@ -1386,25 +1317,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		# Save file system state after step completion
 		self.save_file_system_state()
 
-		# Emit both step created and executed events
-		if browser_state_summary and self.state.last_model_output:
-			# Extract key step data for the event
-			actions_data = []
-			if self.state.last_model_output.action:
-				for action in self.state.last_model_output.action:
-					action_dict = action.model_dump() if hasattr(action, 'model_dump') else {}
-					actions_data.append(action_dict)
-
-			# Emit CreateAgentStepEvent
-			step_event = CreateAgentStepEvent.from_agent_step(
-				self,
-				self.state.last_model_output,
-				self.state.last_result,
-				actions_data,
-				browser_state_summary,
-			)
-			self.eventbus.dispatch(step_event)
-
 		# Increment step counter after step is fully completed
 		self.state.n_steps += 1
 
@@ -1583,7 +1495,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			self._message_manager._add_context_message(UserMessage(content=msg))
 			self.AgentOutput = self.DoneAgentOutput
 
-	@observe(ignore_input=True, ignore_output=False)
 	async def _judge_trace(self) -> JudgementResult | None:
 		"""Judge the trace of the agent"""
 		task = self.task
@@ -1623,8 +1534,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		"""Run judge evaluation and log the verdict.
 
 		The judge verdict is attached to the action result but does NOT override
-		last_result.success — that stays as the agent's self-report. Telemetry
-		sends both values so the eval platform can compare agent vs judge.
+		last_result.success, which remains the agent's self-report.
 		"""
 		judgement = await self._judge_trace()
 
@@ -1829,7 +1739,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 			return original_url
 
-		return URL_PATTERN.sub(replace_url, text), replaced_urls
+		return substitute_url_candidates(text, replace_url), replaced_urls
 
 	def _process_messsages_and_replace_long_urls_shorter_ones(self, input_messages: list[BaseMessage]) -> dict[str, str]:
 		"""Replace long URLs with shorter ones
@@ -1935,7 +1845,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 	# endregion - URL replacement
 
 	@time_execution_async('--get_next_action')
-	@observe_debug(ignore_input=True, ignore_output=True, name='get_model_output')
 	async def get_model_output(self, input_messages: list[BaseMessage]) -> AgentOutput:
 		"""Get next action from LLM based on current state"""
 
@@ -2179,71 +2088,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			self.logger.info('')
 			self.logger.info('Did the Agent not work as expected? Let us fix this!')
 			self.logger.info('   Open a short issue on GitHub: https://github.com/browser-use/browser-use/issues')
-
-	def _log_agent_event(self, max_steps: int, agent_run_error: str | None = None) -> None:
-		"""Sent the agent event for this run to telemetry"""
-
-		token_summary = self.token_cost_service.get_usage_tokens_for_model(self.llm.model)
-
-		# Prepare action_history data correctly
-		action_history_data = []
-		for item in self.history.history:
-			if item.model_output and item.model_output.action:
-				# Convert each ActionModel in the step to its dictionary representation
-				step_actions = [
-					action.model_dump(exclude_unset=True)
-					for action in item.model_output.action
-					if action  # Ensure action is not None if list allows it
-				]
-				action_history_data.append(step_actions)
-			else:
-				# Append None or [] if a step had no actions or no model output
-				action_history_data.append(None)
-
-		final_res = self.history.final_result()
-		final_result_str = json.dumps(final_res) if final_res is not None else None
-
-		# Extract judgement data if available
-		judgement_data = self.history.judgement()
-		judge_verdict = judgement_data.get('verdict') if judgement_data else None
-		judge_reasoning = judgement_data.get('reasoning') if judgement_data else None
-		judge_failure_reason = judgement_data.get('failure_reason') if judgement_data else None
-		judge_reached_captcha = judgement_data.get('reached_captcha') if judgement_data else None
-		judge_impossible_task = judgement_data.get('impossible_task') if judgement_data else None
-
-		self.telemetry.capture(
-			AgentTelemetryEvent(
-				task=self.task,
-				model=self.llm.model,
-				model_provider=self.llm.provider,
-				max_steps=max_steps,
-				max_actions_per_step=self.settings.max_actions_per_step,
-				use_vision=self.settings.use_vision,
-				version=self.version,
-				source=self.source,
-				cdp_url=urlparse(self.browser_session.cdp_url).hostname
-				if self.browser_session and self.browser_session.cdp_url
-				else None,
-				agent_type=None,  # Regular Agent (not code-use)
-				action_errors=self.history.errors(),
-				action_history=action_history_data,
-				urls_visited=self.history.urls(),
-				steps=self.state.n_steps,
-				total_input_tokens=token_summary.prompt_tokens,
-				total_output_tokens=token_summary.completion_tokens,
-				prompt_cached_tokens=token_summary.prompt_cached_tokens,
-				total_tokens=token_summary.total_tokens,
-				total_duration_seconds=self.history.total_duration_seconds(),
-				success=self.history.is_successful(),
-				final_result_response=final_result_str,
-				error_message=agent_run_error,
-				judge_verdict=judge_verdict,
-				judge_reasoning=judge_reasoning,
-				judge_failure_reason=judge_failure_reason,
-				judge_reached_captcha=judge_reached_captcha,
-				judge_impossible_task=judge_impossible_task,
-			)
-		)
 
 	async def take_step(self, step_info: AgentStepInfo | None = None) -> tuple[bool, bool]:
 		"""Take a step
@@ -2501,7 +2345,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 		return False
 
-	@observe(name='agent.run', ignore_input=True, ignore_output=True)
 	@time_execution_async('--run')
 	async def run(
 		self,
@@ -2513,25 +2356,14 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 		loop = asyncio.get_event_loop()
 		agent_run_error: str | None = None  # Initialize error tracking variable
-		self._force_exit_telemetry_logged = False  # ADDED: Flag for custom telemetry on force exit
 		should_delay_close = False
 
 		# Set up the  signal handler with callbacks specific to this agent
-		from browser_use.utils import SignalHandler
-
-		# Define the custom exit callback function for second CTRL+C
-		def on_force_exit_log_telemetry():
-			self._log_agent_event(max_steps=max_steps, agent_run_error='SIGINT: Cancelled by user')
-			# NEW: Call the flush method on the telemetry instance
-			if hasattr(self, 'telemetry') and self.telemetry:
-				self.telemetry.flush()
-			self._force_exit_telemetry_logged = True  # Set the flag
-
 		signal_handler = SignalHandler(
 			loop=loop,
 			pause_callback=self.pause,
 			resume_callback=self.resume,
-			custom_exit_callback=on_force_exit_log_telemetry,  # Pass the new telemetrycallback
+			custom_exit_callback=None,
 			exit_on_second_int=True,
 			disabled=not self.enable_signal_handler,
 		)
@@ -2548,17 +2380,9 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			self._session_start_time = time.time()
 			self._task_start_time = self._session_start_time  # Initialize task start time
 
-			# Only dispatch session events if this is the first run
+			# Mark the session initialized on its first run.
 			if not self.state.session_initialized:
-				self.logger.debug('📡 Dispatching CreateAgentSessionEvent...')
-				# Emit CreateAgentSessionEvent at the START of run()
-				self.eventbus.dispatch(CreateAgentSessionEvent.from_agent(self))
-
 				self.state.session_initialized = True
-
-			self.logger.debug('📡 Dispatching CreateAgentTaskEvent...')
-			# Emit CreateAgentTaskEvent at the START of run()
-			self.eventbus.dispatch(CreateAgentTaskEvent.from_agent(self))
 
 			# Log startup message on first step (only if we haven't already done steps)
 			self._log_first_step_startup()
@@ -2687,22 +2511,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			# Unregister signal handlers before cleanup
 			signal_handler.unregister()
 
-			if not self._force_exit_telemetry_logged:  # MODIFIED: Check the flag
-				try:
-					self._log_agent_event(max_steps=max_steps, agent_run_error=agent_run_error)
-				except Exception as log_e:  # Catch potential errors during logging itself
-					self.logger.error(f'Failed to log telemetry event: {log_e}', exc_info=True)
-			else:
-				# ADDED: Info message when custom telemetry for SIGINT was already logged
-				self.logger.debug('Telemetry for force exit (SIGINT) was logged by custom exit callback.')
-
-			# NOTE: CreateAgentSessionEvent and CreateAgentTaskEvent are now emitted at the START of run()
-			# to match backend requirements for CREATE events to be fired when entities are created,
-			# not when they are completed
-
-			# Emit UpdateAgentTaskEvent at the END of run() with final task state
-			self.eventbus.dispatch(UpdateAgentTaskEvent.from_agent(self))
-
 			# Generate GIF if needed before stopping event bus
 			if self.settings.generate_gif:
 				output_path: str = 'agent_history.gif'
@@ -2714,11 +2522,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 				create_history_gif(task=self.task, history=self.history, output_path=output_path)
 
-				# Only emit output file event if GIF was actually created
-				if Path(output_path).exists():
-					output_event = await CreateAgentOutputFileEvent.from_agent_and_file(self, output_path)
-					self.eventbus.dispatch(output_event)
-
 			# Log final messages to user based on outcome
 			self._log_final_outcome_messages()
 
@@ -2728,7 +2531,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 			await self.close()
 
-	@observe_debug(ignore_input=True, ignore_output=True)
 	@time_execution_async('--multi_act')
 	async def multi_act(self, actions: list[ActionModel]) -> list[ActionResult]:
 		"""Execute multiple actions with page-change guards.
@@ -3019,8 +2821,8 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			ActionResult with extracted content
 		"""
 		from browser_use.agent.prompts import get_ai_step_system_prompt, get_ai_step_user_prompt, get_rerun_summary_message
+		from browser_use.dom.utils import sanitize_surrogates
 		from browser_use.llm.messages import SystemMessage, UserMessage
-		from browser_use.utils import sanitize_surrogates
 
 		# Use provided LLM or agent's LLM
 		llm = ai_step_llm or self.llm
@@ -3134,7 +2936,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		Returns:
 		                List of action results (including AI summary as the final result)
 		"""
-		# Skip cloud sync session events for rerunning (we're replaying, not starting new)
+		# The replay uses the existing session state.
 		self.state.session_initialized = True
 
 		# Initialize browser session
@@ -4044,22 +3846,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			self.DoneAgentOutput = AgentOutput.type_with_custom_actions(self.DoneActionModel)
 		else:
 			self.DoneAgentOutput = AgentOutput.type_with_custom_actions_no_thinking(self.DoneActionModel)
-
-	async def authenticate_cloud_sync(self, show_instructions: bool = True) -> bool:
-		"""
-		Authenticate with cloud service for future runs.
-
-		This is useful when users want to authenticate after a task has completed
-		so that future runs will sync to the cloud.
-
-		Args:
-			show_instructions: Whether to show authentication instructions to user
-
-		Returns:
-			bool: True if authentication was successful
-		"""
-		self.logger.warning('Cloud sync has been removed and is no longer available')
-		return False
 
 	def run_sync(
 		self,

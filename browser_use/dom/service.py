@@ -23,8 +23,7 @@ from browser_use.dom.views import (
 	SerializedDOMState,
 	TargetAllTrees,
 )
-from browser_use.observability import observe_debug
-from browser_use.utils import create_task_with_error_handling
+from browser_use.runtime import create_task_with_error_handling
 
 if TYPE_CHECKING:
 	from browser_use.browser.session import BrowserSession
@@ -699,7 +698,6 @@ class DomService:
 			js_click_listener_backend_ids=js_click_listener_backend_ids if js_click_listener_backend_ids else None,
 		)
 
-	@observe_debug(ignore_input=True, ignore_output=True, name='get_dom_tree')
 	async def get_dom_tree(
 		self,
 		target_id: TargetID,
@@ -1093,7 +1091,6 @@ class DomService:
 
 		return enhanced_dom_tree_node, timing_info
 
-	@observe_debug(ignore_input=True, ignore_output=True, name='get_serialized_dom_tree')
 	async def get_serialized_dom_tree(
 		self, previous_cached_state: SerializedDOMState | None = None
 	) -> tuple[SerializedDOMState, EnhancedDOMTreeNode, dict[str, float]]:

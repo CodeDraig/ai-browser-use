@@ -7,7 +7,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from browser_use.utils import create_task_with_error_handling
+from browser_use.runtime import create_task_with_error_handling
 
 
 def setup_environment(debug: bool):

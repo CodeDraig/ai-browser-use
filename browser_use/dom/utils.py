@@ -5,6 +5,11 @@ def cap_text_length(text: str, max_length: int) -> str:
 	return text[:max_length] + '...'
 
 
+def sanitize_surrogates(text: str) -> str:
+	"""Remove surrogate characters that cannot be encoded in UTF-8."""
+	return text.encode('utf-8', errors='ignore').decode('utf-8')
+
+
 def generate_css_selector_for_element(enhanced_node) -> str | None:
 	"""Generate a CSS selector using node properties from version 0.5.0 approach."""
 	import re

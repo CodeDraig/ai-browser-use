@@ -18,7 +18,6 @@ from browser_use.llm.base import BaseChatModel
 from browser_use.llm.exceptions import ModelProviderError, ModelRateLimitError
 from browser_use.llm.messages import BaseMessage
 from browser_use.llm.views import ChatInvokeCompletion
-from browser_use.observability import observe
 
 T = TypeVar('T', bound=BaseModel)
 
@@ -122,7 +121,6 @@ class ChatBrowserUse(BaseChatModel):
 		self, messages: list[BaseMessage], output_format: type[T], request_type: str = 'browser_agent', **kwargs: Any
 	) -> ChatInvokeCompletion[T]: ...
 
-	@observe(name='chat_browser_use_ainvoke')
 	async def ainvoke(
 		self,
 		messages: list[BaseMessage],
@@ -143,11 +141,6 @@ class ChatBrowserUse(BaseChatModel):
 		Returns:
 			ChatInvokeCompletion with structured response and usage info
 		"""
-		# Get ANONYMIZED_TELEMETRY setting from config
-		from browser_use.config import CONFIG
-
-		anonymized_telemetry = CONFIG.ANONYMIZED_TELEMETRY
-
 		# Extract session_id from kwargs for sticky routing
 		session_id = kwargs.get('session_id')
 
@@ -157,7 +150,8 @@ class ChatBrowserUse(BaseChatModel):
 			'messages': [self._serialize_message(msg) for msg in messages],
 			'fast': self.fast,
 			'request_type': request_type,
-			'anonymized_telemetry': anonymized_telemetry,
+			# Non-configurable privacy assertion for every gateway request.
+			'anonymized_telemetry': False,
 		}
 
 		# Add session_id for sticky routing if provided

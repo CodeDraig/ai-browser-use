@@ -3,10 +3,10 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Literal, Optional
 
 from browser_use.browser.views import PLACEHOLDER_4PX_SCREENSHOT
+from browser_use.dom.utils import sanitize_surrogates
 from browser_use.dom.views import NodeType, SimplifiedNode
 from browser_use.llm.messages import ContentPartImageParam, ContentPartTextParam, ImageURL, SystemMessage, UserMessage
-from browser_use.observability import observe_debug
-from browser_use.utils import is_new_tab_page, sanitize_surrogates
+from browser_use.security import is_new_tab_page
 
 if TYPE_CHECKING:
 	from browser_use.agent.views import AgentStepInfo
@@ -220,7 +220,6 @@ class AgentMessagePrompt:
 		traverse_node(self.browser_state.dom_state._root)
 		return stats
 
-	@observe_debug(ignore_input=True, ignore_output=True, name='_get_browser_state_description')
 	def _get_browser_state_description(self) -> str:
 		# Extract page statistics first
 		page_stats = self._extract_page_statistics()
@@ -400,7 +399,6 @@ Available tabs:
 			logging.getLogger(__name__).warning(f'Failed to resize screenshot: {e}, using original')
 			return screenshot_b64
 
-	@observe_debug(ignore_input=True, ignore_output=True, name='get_user_message')
 	def get_user_message(self, use_vision: bool = True) -> UserMessage:
 		"""Get complete state as a single cached message"""
 		# New-tab pages only carry placeholder screenshots, even later in a multi-tab session.

@@ -6,7 +6,7 @@ description: >
   Agent, Browser, or Tools configuration, is writing code that imports
   from browser_use, asks about @sandbox deployment, supported LLM models,
   Actor API, custom tools, lifecycle hooks, MCP server setup, or
-  monitoring/observability with Laminar or OpenLIT. Also trigger for
+  external instrumentation or cost tracking. Also trigger for
   questions about browser-use installation, prompting strategies, or
   sensitive data handling. Do NOT use this for Cloud API/SDK usage or
   pricing — use the cloud skill instead. Do NOT use this for directly
@@ -28,7 +28,7 @@ Read the relevant file based on what the user needs.
 | Custom tools, built-in tools, ActionResult | `references/tools.md` |
 | Actor API: Page/Element/Mouse (legacy) | `references/actor.md` |
 | MCP server, skills, docs-mcp | `references/integrations.md` |
-| Laminar, OpenLIT, cost tracking, telemetry | `references/monitoring.md` |
+| External instrumentation, OpenLIT, cost tracking | `references/monitoring.md` |
 | Fast agent, parallel, playwright, sensitive data | `references/examples.md` |
 
 ## Critical Notes

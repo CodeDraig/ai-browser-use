@@ -55,8 +55,9 @@ from browser_use.browser.events import (
 from browser_use.browser.profile import BrowserProfile, ProxySettings
 from browser_use.browser.views import BrowserStateSummary, TabInfo
 from browser_use.dom.views import DOMRect, EnhancedDOMTreeNode, SerializedDOMState, TargetInfo
-from browser_use.observability import observe_debug
-from browser_use.utils import _log_pretty_url, create_task_with_error_handling, is_new_tab_page
+from browser_use.logging_utils import log_pretty_url
+from browser_use.runtime import create_task_with_error_handling
+from browser_use.security import is_new_tab_page
 
 if TYPE_CHECKING:
 	from browser_use.actor.page import Page
@@ -717,7 +718,6 @@ class BrowserSession(BaseModel):
 		BaseWatchdog.attach_handler_to_session(self, FileDownloadedEvent, self.on_FileDownloadedEvent)
 		BaseWatchdog.attach_handler_to_session(self, CloseTabEvent, self.on_CloseTabEvent)
 
-	@observe_debug(ignore_input=True, ignore_output=True, name='browser_session_start')
 	async def start(self) -> None:
 		"""Start the browser session."""
 		start_event = self.event_bus.dispatch(BrowserStartEvent())
@@ -774,7 +774,6 @@ class BrowserSession(BaseModel):
 		"""Alias for stop()."""
 		await self.stop()
 
-	@observe_debug(ignore_input=True, ignore_output=True, name='browser_start_event_handler')
 	async def on_BrowserStartEvent(self, event: BrowserStartEvent) -> dict[str, str]:
 		"""Handle browser start request.
 
@@ -968,21 +967,22 @@ class BrowserSession(BaseModel):
 				wait_until=event.wait_until,
 				nav_timeout=event.event_timeout,
 			)
+			committed_url = await self._get_navigation_event_url(target_id, event.url)
 
 			# Close any extension options pages that might have opened
 			await self._close_extension_options_pages()
 
 			# Dispatch navigation complete
-			self.logger.debug(f'Dispatching NavigationCompleteEvent for {event.url} (tab #{target_id[-4:]})')
+			self.logger.debug(f'Dispatching NavigationCompleteEvent for {committed_url} (tab #{target_id[-4:]})')
 			await self.event_bus.dispatch(
 				NavigationCompleteEvent(
 					target_id=target_id,
-					url=event.url,
+					url=committed_url,
 					status=None,  # CDP doesn't provide status directly
 					loading_status=loading_status,  # non-None when readiness timed out
 				)
 			)
-			await self.event_bus.dispatch(AgentFocusChangedEvent(target_id=target_id, url=event.url))
+			await self.event_bus.dispatch(AgentFocusChangedEvent(target_id=target_id, url=committed_url))
 
 			# Note: These should be handled by dedicated watchdogs:
 			# - Security checks (security_watchdog)
@@ -993,17 +993,40 @@ class BrowserSession(BaseModel):
 
 		except Exception as e:
 			self.logger.error(f'Navigation failed: {type(e).__name__}: {e}')
-			# target_id might be unbound if exception happens early
-			if 'target_id' in locals() and target_id:
+			if target_id:
+				committed_url = await self._get_navigation_event_url(target_id, event.url)
 				await self.event_bus.dispatch(
 					NavigationCompleteEvent(
 						target_id=target_id,
-						url=event.url,
+						url=committed_url,
 						error_message=f'{type(e).__name__}: {e}',
 					)
 				)
-				await self.event_bus.dispatch(AgentFocusChangedEvent(target_id=target_id, url=event.url))
+				await self.event_bus.dispatch(AgentFocusChangedEvent(target_id=target_id, url=committed_url))
 			raise
+
+	async def _get_navigation_event_url(self, target_id: str, requested_url: str) -> str:
+		"""Resolve the committed URL for navigation events, failing closed under URL restrictions."""
+		committed_url = await self._get_committed_navigation_url(target_id)
+		if committed_url is not None:
+			return committed_url
+		has_url_policy = bool(self.browser_profile.allowed_domains or self.browser_profile.prohibited_domains)
+		return '' if has_url_policy else requested_url
+
+	async def _get_committed_navigation_url(self, target_id: str) -> str | None:
+		"""Return Chrome's committed main-frame URL, or None when it cannot be verified."""
+		try:
+			cdp_session = await self.get_or_create_cdp_session(target_id, focus=False)
+			history = await cdp_session.cdp_client.send.Page.getNavigationHistory(session_id=cdp_session.session_id)
+			entries = history.get('entries') or []
+			current_index = history.get('currentIndex')
+			if not isinstance(current_index, int) or current_index < 0 or current_index >= len(entries):
+				return None
+			url = entries[current_index].get('url')
+			return url if isinstance(url, str) and url else None
+		except Exception as exc:
+			self.logger.warning(f'Could not verify committed navigation URL for target {target_id[-4:]}: {exc}')
+			return None
 
 	async def _navigate_and_wait(
 		self,
@@ -1583,7 +1606,6 @@ class BrowserSession(BaseModel):
 	# endregion - ========== CDP-based ... ==========
 
 	# region - ========== Helper Methods ==========
-	@observe_debug(ignore_input=True, ignore_output=True, name='get_browser_state_summary')
 	async def get_browser_state_summary(
 		self,
 		include_screenshot: bool = True,
@@ -1870,7 +1892,7 @@ class BrowserSession(BaseModel):
 			is_localhost = parsed_url.hostname in ('localhost', '127.0.0.1', '::1')
 			async with httpx.AsyncClient(timeout=httpx.Timeout(30.0), trust_env=not is_localhost) as client:
 				headers = dict(self.browser_profile.headers or {})
-				from browser_use.utils import get_browser_use_version
+				from browser_use.version import get_browser_use_version
 
 				headers.setdefault('User-Agent', f'browser-use/{get_browser_use_version()}')
 				version_info = await client.get(url, headers=headers)
@@ -1886,7 +1908,7 @@ class BrowserSession(BaseModel):
 			# Create and store the CDP client for direct CDP communication
 			headers = dict(getattr(self.browser_profile, 'headers', None) or {})
 			if not self.is_local:
-				from browser_use.utils import get_browser_use_version
+				from browser_use.version import get_browser_use_version
 
 				headers.setdefault('User-Agent', f'browser-use/{get_browser_use_version()}')
 			self._cdp_client_root = TimeoutWrappedCDPClient(
@@ -1921,7 +1943,7 @@ class BrowserSession(BaseModel):
 			page_targets_from_manager = self.session_manager.get_all_page_targets()
 
 			# Check for chrome://newtab pages and redirect them to about:blank (in parallel)
-			from browser_use.utils import is_new_tab_page
+			from browser_use.security import is_new_tab_page
 
 			async def _redirect_newtab(target):
 				target_url = target.url
@@ -2184,7 +2206,7 @@ class BrowserSession(BaseModel):
 		# 3. Create new CDPClient with the same cdp_url
 		headers = dict(getattr(self.browser_profile, 'headers', None) or {})
 		if not self.is_local:
-			from browser_use.utils import get_browser_use_version
+			from browser_use.version import get_browser_use_version
 
 			headers.setdefault('User-Agent', f'browser-use/{get_browser_use_version()}')
 		self._cdp_client_root = TimeoutWrappedCDPClient(
@@ -2365,7 +2387,7 @@ class BrowserSession(BaseModel):
 
 			except Exception as e:
 				# Fallback to basic title handling
-				self.logger.debug(f'⚠️ Failed to get target info for tab #{i}: {_log_pretty_url(url)} - {type(e).__name__}')
+				self.logger.debug(f'⚠️ Failed to get target info for tab #{i}: {log_pretty_url(url)} - {type(e).__name__}')
 
 				if is_new_tab_page(url):
 					title = ''
@@ -2801,7 +2823,6 @@ class BrowserSession(BaseModel):
 		except Exception as e:
 			self.logger.warning(f'Failed to remove highlights: {e}')
 
-	@observe_debug(ignore_input=True, ignore_output=True, name='get_element_coordinates')
 	async def get_element_coordinates(self, backend_node_id: int, cdp_session: CDPSession) -> DOMRect | None:
 		"""Get element coordinates for a backend node ID using multiple methods.
 
@@ -3679,7 +3700,7 @@ class BrowserSession(BaseModel):
 
 		# Always allow new tab pages (chrome://new-tab-page/, chrome://newtab/, about:blank)
 		# so they can be redirected to about:blank in connect()
-		from browser_use.utils import is_new_tab_page
+		from browser_use.security import is_new_tab_page
 
 		if is_new_tab_page(url):
 			url_allowed = True
@@ -4009,7 +4030,6 @@ class BrowserSession(BaseModel):
 		self.logger.error(f'❌ No session info for node {node.backend_node_id} and no agent_focus available. Using main session.')
 		return await self.get_or_create_cdp_session()
 
-	@observe_debug(ignore_input=True, ignore_output=True, name='take_screenshot')
 	async def take_screenshot(
 		self,
 		path: str | None = None,

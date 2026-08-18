@@ -1,3 +1,5 @@
+import pytest
+
 from browser_use.browser import BrowserProfile, BrowserSession
 
 
@@ -253,40 +255,6 @@ class TestUrlAllowlistSecurity:
 		# www should NOT be automatically added for full URL patterns
 		assert watchdog._is_url_allowed('https://www.example.com') is False
 		assert watchdog._is_url_allowed('http://www.test.org') is False
-
-	def test_is_root_domain_helper(self):
-		"""Test the _is_root_domain helper method logic."""
-		from bubus import EventBus
-
-		from browser_use.browser.watchdogs.security_watchdog import SecurityWatchdog
-
-		browser_profile = BrowserProfile(allowed_domains=['example.com'], headless=True, user_data_dir=None)
-		browser_session = BrowserSession(browser_profile=browser_profile)
-		event_bus = EventBus()
-		watchdog = SecurityWatchdog(browser_session=browser_session, event_bus=event_bus)
-
-		# Simple root domains (1 dot) - should return True
-		assert watchdog._is_root_domain('example.com') is True
-		assert watchdog._is_root_domain('test.org') is True
-		assert watchdog._is_root_domain('site.net') is True
-
-		# Subdomains (more than 1 dot) - should return False
-		assert watchdog._is_root_domain('www.example.com') is False
-		assert watchdog._is_root_domain('mail.example.com') is False
-		assert watchdog._is_root_domain('example.co.uk') is False
-		assert watchdog._is_root_domain('test.com.au') is False
-
-		# Wildcards - should return False
-		assert watchdog._is_root_domain('*.example.com') is False
-		assert watchdog._is_root_domain('*example.com') is False
-
-		# Full URLs - should return False
-		assert watchdog._is_root_domain('https://example.com') is False
-		assert watchdog._is_root_domain('http://test.org') is False
-
-		# Invalid domains - should return False
-		assert watchdog._is_root_domain('example') is False
-		assert watchdog._is_root_domain('') is False
 
 
 class TestUrlProhibitlistSecurity:
@@ -567,3 +535,150 @@ class TestDomainListOptimization:
 		# Should work correctly
 		assert watchdog._is_url_allowed('https://blocked0.com') is False
 		assert watchdog._is_url_allowed('https://example.com') is True
+
+	def test_domain_only_patterns_are_https_only_and_label_bounded(self):
+		from bubus import EventBus
+
+		from browser_use.browser.watchdogs.security_watchdog import SecurityWatchdog
+
+		profile = BrowserProfile(allowed_domains=['example.com'], headless=True, user_data_dir=None)
+		watchdog = SecurityWatchdog(browser_session=BrowserSession(browser_profile=profile), event_bus=EventBus())
+
+		assert watchdog._is_url_allowed('https://example.com/path') is True
+		assert watchdog._is_url_allowed('https://www.example.com/path') is True
+		assert watchdog._is_url_allowed('http://example.com/path') is False
+		assert watchdog._is_url_allowed('ftp://example.com/path') is False
+		assert watchdog._is_url_allowed('chrome://example.com/path') is False
+		assert watchdog._is_url_allowed('https://example.com.evil.test') is False
+		assert watchdog._is_url_allowed('https://notexample.com') is False
+
+	def test_large_allowlist_keeps_scheme_and_wildcard_semantics(self):
+		from bubus import EventBus
+
+		from browser_use.browser.watchdogs.security_watchdog import SecurityWatchdog
+
+		patterns = [f'allowed{i}.example' for i in range(98)] + ['http://plain.test', 'https://*.wild.test']
+		profile = BrowserProfile(allowed_domains=patterns, headless=True, user_data_dir=None)
+		watchdog = SecurityWatchdog(browser_session=BrowserSession(browser_profile=profile), event_bus=EventBus())
+
+		assert isinstance(profile.allowed_domains, set)
+		assert watchdog._is_url_allowed('http://plain.test') is True
+		assert watchdog._is_url_allowed('https://plain.test') is False
+		assert watchdog._is_url_allowed('https://deep.wild.test') is True
+		assert watchdog._is_url_allowed('http://deep.wild.test') is False
+
+	async def test_redirect_policy_uses_navigation_complete_url(self, monkeypatch):
+		from types import SimpleNamespace
+		from unittest.mock import AsyncMock
+
+		from bubus import EventBus
+
+		from browser_use.browser.events import NavigationCompleteEvent
+		from browser_use.browser.watchdogs.security_watchdog import SecurityWatchdog
+
+		profile = BrowserProfile(allowed_domains=['allowed.test'], headless=True, user_data_dir=None)
+		browser_session = BrowserSession(browser_profile=profile)
+		navigate = AsyncMock()
+		cdp_client = SimpleNamespace(send=SimpleNamespace(Page=SimpleNamespace(navigate=navigate)))
+		monkeypatch.setattr(
+			BrowserSession,
+			'get_or_create_cdp_session',
+			AsyncMock(return_value=SimpleNamespace(cdp_client=cdp_client, session_id='session')),
+		)
+		event_bus = EventBus()
+		watchdog = SecurityWatchdog(browser_session=browser_session, event_bus=event_bus)
+
+		await watchdog.on_NavigationCompleteEvent(NavigationCompleteEvent(target_id='target', url='https://allowed.test/final'))
+		navigate.assert_not_awaited()
+
+		await watchdog.on_NavigationCompleteEvent(NavigationCompleteEvent(target_id='target', url='https://blocked.test/final'))
+		navigate.assert_awaited_once_with(params={'url': 'about:blank'}, session_id='session')
+
+		await watchdog.on_NavigationCompleteEvent(NavigationCompleteEvent(target_id='target', url=''))
+		assert navigate.await_count == 2
+		await event_bus.stop(clear=True, timeout=0.1)
+
+	async def test_committed_navigation_url_comes_from_cdp_history(self, monkeypatch):
+		from types import SimpleNamespace
+		from unittest.mock import AsyncMock
+
+		browser_session = BrowserSession(browser_profile=BrowserProfile(headless=True, user_data_dir=None))
+		get_history = AsyncMock(
+			return_value={
+				'currentIndex': 1,
+				'entries': [{'url': 'https://requested.test'}, {'url': 'https://redirected.test/final'}],
+			}
+		)
+		monkeypatch.setattr(
+			BrowserSession,
+			'get_or_create_cdp_session',
+			AsyncMock(
+				return_value=SimpleNamespace(
+					cdp_client=SimpleNamespace(send=SimpleNamespace(Page=SimpleNamespace(getNavigationHistory=get_history))),
+					session_id='session',
+				)
+			),
+		)
+
+		assert await browser_session._get_committed_navigation_url('target') == 'https://redirected.test/final'
+		get_history.assert_awaited_once_with(session_id='session')
+
+	@pytest.mark.parametrize(
+		('allowed_domains', 'prohibited_domains', 'committed_url', 'expected_url'),
+		[
+			(['allowed.test'], None, 'https://allowed.test/final', 'https://allowed.test/final'),
+			(['allowed.test'], None, 'https://blocked.test/final', 'https://blocked.test/final'),
+			(['allowed.test'], None, None, ''),
+			(None, ['blocked.test'], None, ''),
+			(None, None, None, 'https://requested.test'),
+		],
+	)
+	async def test_navigation_event_url_uses_committed_url_and_fails_closed(
+		self, monkeypatch, allowed_domains, prohibited_domains, committed_url, expected_url
+	):
+		from unittest.mock import AsyncMock
+
+		profile = BrowserProfile(
+			allowed_domains=allowed_domains,
+			prohibited_domains=prohibited_domains,
+			headless=True,
+			user_data_dir=None,
+		)
+		browser_session = BrowserSession(browser_profile=profile)
+		monkeypatch.setattr(browser_session, '_get_committed_navigation_url', AsyncMock(return_value=committed_url))
+
+		assert await browser_session._get_navigation_event_url('target', 'https://requested.test') == expected_url
+
+	async def test_navigation_exception_emits_committed_redirect_url(self, monkeypatch):
+		from types import SimpleNamespace
+		from unittest.mock import AsyncMock
+
+		from browser_use.browser.events import AgentFocusChangedEvent, NavigateToUrlEvent, NavigationCompleteEvent
+
+		profile = BrowserProfile(allowed_domains=['allowed.test'], headless=True, user_data_dir=None)
+		browser_session = BrowserSession(browser_profile=profile)
+		browser_session.agent_focus_target_id = 'target'
+		browser_session.session_manager = SimpleNamespace(
+			get_target=lambda _target_id: SimpleNamespace(url='https://allowed.test/start')
+		)
+		dispatch = AsyncMock()
+		monkeypatch.setattr(browser_session.event_bus, 'dispatch', dispatch)
+		monkeypatch.setattr(browser_session, '_navigate_and_wait', AsyncMock(side_effect=TimeoutError('timed out')))
+		monkeypatch.setattr(
+			browser_session,
+			'_get_committed_navigation_url',
+			AsyncMock(return_value='https://blocked.test/final'),
+		)
+
+		with pytest.raises(TimeoutError, match='timed out'):
+			await browser_session.on_NavigateToUrlEvent(NavigateToUrlEvent(url='https://allowed.test/start'))
+
+		navigation_complete = next(
+			call.args[0] for call in dispatch.await_args_list if isinstance(call.args[0], NavigationCompleteEvent)
+		)
+		focus_changed = next(
+			call.args[0] for call in dispatch.await_args_list if isinstance(call.args[0], AgentFocusChangedEvent)
+		)
+		assert navigation_complete.url == 'https://blocked.test/final'
+		assert navigation_complete.error_message == 'TimeoutError: timed out'
+		assert focus_changed.url == 'https://blocked.test/final'

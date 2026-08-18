@@ -12,7 +12,6 @@ from cdp_use.cdp.target.types import SessionID, TargetID, TargetInfo
 from uuid_extensions import uuid7str
 
 from browser_use.dom.utils import cap_text_length
-from browser_use.observability import observe_debug
 
 # Serializer types
 DEFAULT_INCLUDE_ATTRIBUTES = [
@@ -935,7 +934,6 @@ class SerializedDOMState:
 
 	selector_map: DOMSelectorMap
 
-	@observe_debug(ignore_input=True, ignore_output=True, name='llm_representation')
 	def llm_representation(
 		self,
 		include_attributes: list[str] | None = None,
@@ -950,7 +948,6 @@ class SerializedDOMState:
 
 		return DOMTreeSerializer.serialize_tree(self._root, include_attributes)
 
-	@observe_debug(ignore_input=True, ignore_output=True, name='eval_representation')
 	def eval_representation(
 		self,
 		include_attributes: list[str] | None = None,

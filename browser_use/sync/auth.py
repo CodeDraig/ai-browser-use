@@ -297,7 +297,7 @@ class DeviceAuthClient:
 			verification_uri_complete = device_auth['verification_uri_complete'].replace(self.base_url, frontend_url)
 
 			terminal_width, _terminal_height = shutil.get_terminal_size((80, 20))
-			if show_instructions and CONFIG.BROWSER_USE_CLOUD_SYNC:
+			if show_instructions:
 				logger.info('─' * max(terminal_width - 40, 20))
 				logger.info('🌐  View the details of this run in Browser Use Cloud:')
 				logger.info(f'    👉  {verification_uri_complete}')
@@ -317,16 +317,14 @@ class DeviceAuthClient:
 				self.auth_config.save_to_file()
 
 				if show_instructions:
-					logger.debug('✅  Authentication successful! Cloud sync is now enabled with your browser-use account.')
+					logger.debug('✅  Authentication successful!')
 
 				return True
 
 		except httpx.HTTPStatusError as e:
 			# HTTP error with response
 			if e.response.status_code == 404:
-				logger.warning(
-					'Cloud sync authentication endpoint not found (404). Check your BROWSER_USE_CLOUD_API_URL setting.'
-				)
+				logger.warning('Cloud authentication endpoint not found (404). Check your BROWSER_USE_CLOUD_API_URL setting.')
 			else:
 				logger.warning(f'Failed to authenticate with cloud service: HTTP {e.response.status_code} - {e.response.text}')
 		except httpx.RequestError as e:
@@ -335,10 +333,10 @@ class DeviceAuthClient:
 			pass
 		except Exception as e:
 			# Other unexpected errors
-			logger.warning(f'❌ Unexpected error during cloud sync authentication: {type(e).__name__}: {e}')
+			logger.warning(f'❌ Unexpected error during cloud authentication: {type(e).__name__}: {e}')
 
 		if show_instructions:
-			logger.debug(f'❌ Sync authentication failed or timed out with {CONFIG.BROWSER_USE_CLOUD_API_URL}')
+			logger.debug(f'❌ Authentication failed or timed out with {CONFIG.BROWSER_USE_CLOUD_API_URL}')
 
 		return False
 

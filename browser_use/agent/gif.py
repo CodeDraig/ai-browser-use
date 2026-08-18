@@ -168,7 +168,7 @@ def create_history_gif(
 			continue
 
 		# Skip screenshots from new tab pages
-		from browser_use.utils import is_new_tab_page
+		from browser_use.security import is_new_tab_page
 
 		if is_new_tab_page(item.state.url):
 			logger.debug(f'Skipping screenshot from new tab page ({item.state.url}) at step {i}')

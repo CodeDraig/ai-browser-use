@@ -4,7 +4,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from browser_use.utils import create_task_with_error_handling
+from browser_use.runtime import create_task_with_error_handling
 
 
 class ExpectedTaskError(RuntimeError):

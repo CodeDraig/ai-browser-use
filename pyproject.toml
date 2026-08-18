@@ -19,7 +19,6 @@ dependencies = [
     "rich==14.3.3",
     "google-api-core==2.29.0",
     "httpx==0.28.1",
-    "posthog==7.7.0",
     "psutil==7.2.2",
     "pydantic==2.12.5",
     "pyobjc==12.1; platform_system == 'darwin'",
@@ -59,13 +58,6 @@ dependencies = [
 
 [project.optional-dependencies]
 cli = []
-core = [
-    "browser-use-core==0.13.3; sys_platform == 'darwin' and platform_machine == 'arm64'",
-    "browser-use-core==0.13.3; sys_platform == 'darwin' and platform_machine == 'x86_64'",
-    "browser-use-core==0.13.3; sys_platform == 'linux' and platform_machine == 'x86_64'",
-    "browser-use-core==0.13.3; sys_platform == 'linux' and platform_machine == 'aarch64'",
-    "browser-use-core==0.13.3; sys_platform == 'win32' and (platform_machine == 'AMD64' or platform_machine == 'x86_64')",
-]
 aws = ["boto3==1.42.37"]
 oci = ["oci==2.166.0"]
 video = ["imageio[ffmpeg]==2.37.2", "numpy==2.4.1"]
@@ -79,7 +71,6 @@ examples = [
     "langchain-openai==1.1.7",
 ]
 eval = [
-    "lmnr[all]==0.7.42",
     "anyio==4.12.1",
     "psutil==7.2.2",
     "datamodel-code-generator==0.53.0",
@@ -96,7 +87,6 @@ all = ["browser-use[cli,examples,aws,oci]"]
 Homepage = "https://browser-use.com"
 Documentation = "https://docs.browser-use.com"
 Repository = "https://github.com/browser-use/browser-use"
-Telemetry = "https://docs.browser-use.com/development/monitoring/telemetry"
 "Terms of Service" = "https://browser-use.com/legal/terms-of-service"
 "Privacy Policy" = "https://browser-use.com/privacy/"
 
@@ -161,9 +151,6 @@ exclude = [
     "browser_use/llm/oci_raw/*",
     "browser_use/llm/tests/test_chat_models.py",
     "browser_use/llm/tests/test_single_step.py",
-    # Dynamic beta agent wrapper; covered by tests/ci/test_beta_agent.py.
-    "browser_use/beta/service.py",
-    "tests/ci/test_beta_agent.py",
     "product_extraction.py",
     "discover/",
     "list/",
@@ -239,8 +226,10 @@ dev-dependencies = [
     "pyright==1.1.408",
     "ty==0.0.14",
     "pytest-xdist==3.8.0",
-    "lmnr[all]==0.7.42",
     # "pytest-playwright-asyncio>=0.7.0",  # not actually needed I think
     "pytest-timeout==2.4.0",
     "pydantic_settings==2.12.0",
 ]
+
+[tool.uv.sources]
+browser-harness = { path = "vendor/browser-harness" }

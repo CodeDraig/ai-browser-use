@@ -50,9 +50,6 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 load_dotenv()
 
 
-os.environ['ANONYMIZED_TELEMETRY'] = 'false'
-
-
 from browser_use import Agent, BrowserProfile, ChatAzureOpenAI
 
 # Configuration LLM
@@ -64,16 +61,16 @@ llm = ChatAzureOpenAI(model='gpt-4.1-mini', api_key=api_key, azure_endpoint=azur
 task = 'Find the founders of the sensitive company_name'
 
 # Configuration Browser (optional)
-browser_profile = BrowserProfile(allowed_domains=['*google.com', 'browser-use.com'], enable_default_extensions=False)
+browser_profile = BrowserProfile(allowed_domains=['*.google.com', 'browser-use.com'], enable_default_extensions=False)
 
-# Sensitive data (optional) - {key: sensitive_information} - we filter out the sensitive_information from any input to the LLM, it will only work with placeholder.
+# Sensitive data is scoped to the domain where it may be used. Values are filtered from LLM input.
 # By default we pass screenshots to the LLM which can contain your information. Set use_vision=False to disable this.
 # If you trust your LLM endpoint, you don't need to worry about this.
-sensitive_data = {'company_name': 'browser-use'}
+sensitive_data = {'*.google.com': {'company_name': 'browser-use'}}
 
 
 # Create Agent
-agent = Agent(task=task, llm=llm, browser_profile=browser_profile, sensitive_data=sensitive_data)  # type: ignore
+agent = Agent(task=task, llm=llm, browser_profile=browser_profile, sensitive_data=sensitive_data)
 
 
 async def main():

@@ -16,8 +16,8 @@ from browser_use.dom.views import (
 	EnhancedDOMTreeNode,
 	SerializedDOMState,
 )
-from browser_use.observability import observe_debug
-from browser_use.utils import create_task_with_error_handling, time_execution_async
+from browser_use.logging_utils import time_execution_async
+from browser_use.runtime import create_task_with_error_handling
 
 if TYPE_CHECKING:
 	from browser_use.browser.views import BrowserStateSummary, NetworkRequest, PageInfo, PaginationButton
@@ -240,7 +240,6 @@ class DOMWatchdog(BaseWatchdog):
 
 		return []
 
-	@observe_debug(ignore_input=True, ignore_output=True, name='browser_state_request_event')
 	async def on_BrowserStateRequestEvent(self, event: BrowserStateRequestEvent) -> 'BrowserStateSummary':
 		"""Handle browser state request by coordinating DOM building and screenshot capture.
 
@@ -547,7 +546,6 @@ class DOMWatchdog(BaseWatchdog):
 			)
 
 	@time_execution_async('build_dom_tree_without_highlights')
-	@observe_debug(ignore_input=True, ignore_output=True, name='build_dom_tree_without_highlights')
 	async def _build_dom_tree_without_highlights(self, previous_state: SerializedDOMState | None = None) -> SerializedDOMState:
 		"""Build DOM tree without injecting JavaScript highlights (for parallel execution)."""
 		try:
@@ -688,7 +686,6 @@ class DOMWatchdog(BaseWatchdog):
 			raise
 
 	@time_execution_async('capture_clean_screenshot')
-	@observe_debug(ignore_input=True, ignore_output=True, name='capture_clean_screenshot')
 	async def _capture_clean_screenshot(self) -> str:
 		"""Capture a clean screenshot without JavaScript highlights."""
 		try:

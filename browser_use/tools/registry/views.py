@@ -118,7 +118,7 @@ class ActionRegistry(BaseModel):
 			return False
 
 		# Use the centralized URL matching logic from utils
-		from browser_use.utils import match_url_with_domain_pattern
+		from browser_use.security import match_url_with_domain_pattern
 
 		for domain_pattern in domains:
 			if match_url_with_domain_pattern(url, domain_pattern):

@@ -203,7 +203,3 @@ uv sync --all-extras --dev
 # Run examples
 uv run examples/simple.py
 ```
-
-### Telemetry
-
-Opt out with `ANONYMIZED_TELEMETRY=false` env var. Zero performance impact.

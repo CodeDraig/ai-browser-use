@@ -15,15 +15,14 @@ from browser_use.browser import BrowserSession
 from browser_use.browser.views import BrowserError
 from browser_use.filesystem.file_system import FileSystem
 from browser_use.llm.base import BaseChatModel
-from browser_use.observability import observe_debug
-from browser_use.telemetry.service import ProductTelemetry
+from browser_use.logging_utils import time_execution_async
+from browser_use.security import SensitiveData, is_new_tab_page, matching_sensitive_values
 from browser_use.tools.registry.views import (
 	ActionModel,
 	ActionRegistry,
 	RegisteredAction,
 	SpecialActionParameters,
 )
-from browser_use.utils import is_new_tab_page, match_url_with_domain_pattern, time_execution_async
 
 Context = TypeVar('Context')
 
@@ -35,7 +34,6 @@ class Registry(Generic[Context]):
 
 	def __init__(self, exclude_actions: list[str] | None = None):
 		self.registry = ActionRegistry()
-		self.telemetry = ProductTelemetry()
 		# Create a new list to avoid mutable default argument issues
 		self.exclude_actions = list(exclude_actions) if exclude_actions is not None else []
 
@@ -326,7 +324,6 @@ class Registry(Generic[Context]):
 
 		return decorator
 
-	@observe_debug(ignore_input=True, ignore_output=True, name='execute_action')
 	@time_execution_async('--execute_action')
 	async def execute_action(
 		self,
@@ -335,7 +332,7 @@ class Registry(Generic[Context]):
 		browser_session: BrowserSession | None = None,
 		page_extraction_llm: BaseChatModel | None = None,
 		file_system: FileSystem | None = None,
-		sensitive_data: dict[str, str | dict[str, str]] | None = None,
+		sensitive_data: SensitiveData | None = None,
 		available_file_paths: list[str] | None = None,
 		extraction_schema: dict | None = None,
 	) -> Any:
@@ -425,15 +422,14 @@ class Registry(Generic[Context]):
 			logger.info(f'🔒 Using sensitive data placeholders: {", ".join(sorted(placeholders_used))}{url_info}')
 
 	def _replace_sensitive_data(
-		self, params: BaseModel, sensitive_data: dict[str, Any], current_url: str | None = None
+		self, params: BaseModel, sensitive_data: SensitiveData, current_url: str | None = None
 	) -> BaseModel:
 		"""
 		Replaces sensitive data placeholders in params with actual values.
 
 		Args:
 			params: The parameter object containing <secret>placeholder</secret> tags
-			sensitive_data: Dictionary of sensitive data, either in old format {key: value}
-						   or new format {domain_pattern: {key: value}}
+			sensitive_data: Domain pattern to placeholder/value mappings.
 			current_url: Optional current URL for domain matching
 
 		Returns:
@@ -446,23 +442,7 @@ class Registry(Generic[Context]):
 		# Set to track successfully replaced placeholders
 		replaced_placeholders = set()
 
-		# Process sensitive data based on format and current URL
-		applicable_secrets = {}
-
-		for domain_or_key, content in sensitive_data.items():
-			if isinstance(content, dict):
-				# New format: {domain_pattern: {key: value}}
-				# Only include secrets for domains that match the current URL
-				if current_url and not is_new_tab_page(current_url):
-					# it's a real url, check it using our custom allowed_domains scheme://*.example.com glob matching
-					if match_url_with_domain_pattern(current_url, domain_or_key):
-						applicable_secrets.update(content)
-			else:
-				# Old format: {key: value}, expose to all domains (only allowed for legacy reasons)
-				applicable_secrets[domain_or_key] = content
-
-		# Filter out empty values
-		applicable_secrets = {k: v for k, v in applicable_secrets.items() if v}
+		applicable_secrets = matching_sensitive_values(sensitive_data, current_url)
 
 		def recursively_replace_secrets(value: str | dict | list) -> str | dict | list:
 			if isinstance(value, str):

@@ -263,7 +263,7 @@ class TestAutocompleteInteraction:
 			index=input_index,
 			text='secret123',
 			browser_session=browser_session,
-			sensitive_data={'password': 'secret123'},
+			sensitive_data={'http*://localhost': {'password': 'secret123'}},
 		)
 
 		assert isinstance(result, ActionResult)

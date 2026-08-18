@@ -24,12 +24,12 @@ from browser_use.llm.messages import (
 	SystemMessage,
 	UserMessage,
 )
-from browser_use.observability import observe_debug
-from browser_use.utils import (
+from browser_use.logging_utils import time_execution_sync
+from browser_use.security import (
+	SensitiveData,
 	collect_sensitive_data_values,
-	match_url_with_domain_pattern,
+	matching_sensitive_values,
 	redact_sensitive_string,
-	time_execution_sync,
 )
 
 logger = logging.getLogger(__name__)
@@ -112,7 +112,7 @@ class MessageManager:
 		state: MessageManagerState | None = None,
 		use_thinking: bool = True,
 		include_attributes: list[str] | None = None,
-		sensitive_data: dict[str, str | dict[str, str]] | None = None,
+		sensitive_data: SensitiveData | None = None,
 		max_history_items: int | None = None,
 		vision_detail_level: Literal['auto', 'low', 'high'] = 'auto',
 		include_tool_call_examples: bool = False,
@@ -396,14 +396,7 @@ class MessageManager:
 		# Collect placeholders for sensitive data
 		placeholders: set[str] = set()
 
-		for key, value in sensitive_data.items():
-			if isinstance(value, dict):
-				# New format: {domain: {key: value}}
-				if current_page_url and match_url_with_domain_pattern(current_page_url, key, True):
-					placeholders.update(value.keys())
-			else:
-				# Old format: {key: value}
-				placeholders.add(key)
+		placeholders.update(matching_sensitive_values(sensitive_data, current_page_url, log_warnings=True))
 
 		if placeholders:
 			placeholder_list = sorted(list(placeholders))
@@ -419,7 +412,6 @@ class MessageManager:
 
 		return ''
 
-	@observe_debug(ignore_input=True, ignore_output=True, name='create_state_messages')
 	@time_execution_sync('--create_state_messages')
 	def create_state_messages(
 		self,

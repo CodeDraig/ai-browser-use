@@ -17,7 +17,6 @@ from browser_use.mcp.client import MCPClient
 
 def _make_connected_client() -> MCPClient:
 	client = MCPClient(server_name='test-server', command='test-command')
-	client._telemetry = MagicMock()
 	client._connected = True
 	client.session = MagicMock()
 	return client

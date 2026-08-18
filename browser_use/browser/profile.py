@@ -1,3 +1,4 @@
+import logging
 import os
 import sys
 import tempfile
@@ -13,7 +14,9 @@ from pydantic import AfterValidator, AliasChoices, BaseModel, ConfigDict, Field,
 
 from browser_use.browser.cloud.views import CloudBrowserParams
 from browser_use.config import CONFIG
-from browser_use.utils import _log_pretty_path, logger
+from browser_use.logging_utils import log_pretty_path
+
+logger = logging.getLogger(__name__)
 
 
 def _get_enable_default_extensions_default() -> bool:
@@ -729,7 +732,7 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 	# )
 
 	def __repr__(self) -> str:
-		short_dir = _log_pretty_path(self.user_data_dir) if self.user_data_dir else '<incognito>'
+		short_dir = log_pretty_path(self.user_data_dir) if self.user_data_dir else '<incognito>'
 		return f'BrowserProfile(user_data_dir= {short_dir}, headless={self.headless})'
 
 	def __str__(self) -> str:
@@ -738,16 +741,11 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 	@field_validator('allowed_domains', 'prohibited_domains', mode='after')
 	@classmethod
 	def optimize_large_domain_lists(cls, v: list[str] | set[str] | None) -> list[str] | set[str] | None:
-		"""Convert large domain lists (>=100 items) to sets for O(1) lookup performance."""
+		"""Deduplicate large domain lists without changing their matching semantics."""
 		if v is None or isinstance(v, set):
 			return v
 
 		if len(v) >= DOMAIN_OPTIMIZATION_THRESHOLD:
-			logger.warning(
-				f'🔧 Optimizing domain list with {len(v)} items to set for O(1) lookup. '
-				f'Note: Pattern matching (*.domain.com, etc.) is not supported for lists >= {DOMAIN_OPTIMIZATION_THRESHOLD} items. '
-				f'Use exact domains only or keep list size < {DOMAIN_OPTIMIZATION_THRESHOLD} for pattern support.'
-			)
 			return set(v)
 
 		return v
@@ -798,7 +796,7 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 				else 'None'
 			)
 			logger.warning(
-				f'⚠️ {self} Changing user_data_dir= {_log_pretty_path(self.user_data_dir)} ➡️ .../default-{alternate_name} to avoid {alternate_name.upper()} corruping default profile created by {BROWSERUSE_DEFAULT_CHANNEL.name}'
+				f'⚠️ {self} Changing user_data_dir= {log_pretty_path(self.user_data_dir)} ➡️ .../default-{alternate_name} to avoid {alternate_name.upper()} corruping default profile created by {BROWSERUSE_DEFAULT_CHANNEL.name}'
 			)
 			self.user_data_dir = CONFIG.BROWSER_USE_DEFAULT_USER_DATA_DIR.parent / f'default-{alternate_name}'
 		return self
@@ -1052,7 +1050,6 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 		# Create extensions cache directory
 		cache_dir = CONFIG.BROWSER_USE_EXTENSIONS_DIR
 		cache_dir.mkdir(parents=True, exist_ok=True)
-		# logger.debug(f'📁 Extensions cache directory: {_log_pretty_path(cache_dir)}')
 
 		extension_paths = []
 		loaded_extension_names = []

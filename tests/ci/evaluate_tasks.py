@@ -45,7 +45,7 @@ async def run_single_task(task_file):
 
 		# Suppress all logging in subprocess to avoid interfering with JSON output
 		logging.getLogger().setLevel(logging.CRITICAL)
-		for logger_name in ['browser_use', 'telemetry', 'message_manager']:
+		for logger_name in ['browser_use', 'message_manager']:
 			logging.getLogger(logger_name).setLevel(logging.CRITICAL)
 		warnings.filterwarnings('ignore')
 
