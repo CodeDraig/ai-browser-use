@@ -144,9 +144,7 @@ async def test_authenticate_never_loads_token_through_symlink(tmp_path, monkeypa
 	monkeypatch.setattr(gmail_service.InstalledAppFlow, 'from_client_secrets_file', lambda *_args: Flow())
 	monkeypatch.setattr(gmail_service, 'build', lambda *_args, **_kwargs: object())
 
-	service = GmailService(
-		credentials_file=str(credentials_path), token_file=str(token_path), config_dir=str(tmp_path)
-	)
+	service = GmailService(credentials_file=str(credentials_path), token_file=str(token_path), config_dir=str(tmp_path))
 	assert await service.authenticate() is True
 
 	assert not token_path.is_symlink()

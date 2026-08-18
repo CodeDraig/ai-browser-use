@@ -49,6 +49,7 @@ class SignalHandler:
 
 		try:
 			if self.is_windows:
+
 				def windows_handler(sig, frame):
 					print('\n\n🛑 Got Ctrl+C. Exiting immediately on Windows...\n', file=stderr)
 					if self.custom_exit_callback:
@@ -221,9 +222,7 @@ def create_task_with_error_handling(
 		except asyncio.CancelledError:
 			pass
 		except Exception as error:
-			log.error(
-				f'Error handling exception in task [{completed_task.get_name()}]: {type(error).__name__}: {error}'
-			)
+			log.error(f'Error handling exception in task [{completed_task.get_name()}]: {type(error).__name__}: {error}')
 
 	task.add_done_callback(handle_task_exception)
 	return task

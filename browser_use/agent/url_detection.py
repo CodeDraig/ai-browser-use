@@ -3,9 +3,7 @@ from collections.abc import Callable, Iterator
 from re import Match
 from urllib.parse import urlparse
 
-_URL_PATTERN = re.compile(
-	r'https?://[^\s<>"\']+|www\.[^\s<>"\']+|[^\s<>"\']+\.[a-z]{2,}(?:/[^\s<>"\']*)?', re.IGNORECASE
-)
+_URL_PATTERN = re.compile(r'https?://[^\s<>"\']+|www\.[^\s<>"\']+|[^\s<>"\']+\.[a-z]{2,}(?:/[^\s<>"\']*)?', re.IGNORECASE)
 
 
 def iter_url_candidate_matches(text: str) -> Iterator[Match[str]]:

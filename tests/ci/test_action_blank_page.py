@@ -15,6 +15,7 @@ from pytest_httpserver import HTTPServer
 from browser_use.agent.views import ActionResult
 from browser_use.browser import BrowserProfile, BrowserSession
 from browser_use.tools.service import Tools
+from tests.ci.action_helpers import execute_registered_action
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -91,7 +92,7 @@ def tools():
 
 async def _navigate(tools, browser_session, url):
 	"""Navigate to url and give the page a moment to settle."""
-	await tools.navigate(url=url, new_tab=False, browser_session=browser_session)
+	await execute_registered_action(tools, 'navigate', url=url, new_tab=False, browser_session=browser_session)
 	await asyncio.sleep(0.5)
 
 
@@ -187,7 +188,7 @@ class TestNavigateReloadFallback:
 		empty_url = f'{base_url}/always-empty'
 
 		# Triggers: health check -> 3s wait -> reload -> 5s wait -> check _root -> not None -> success
-		result = await tools.navigate(url=empty_url, new_tab=False, browser_session=browser_session)
+		result = await execute_registered_action(tools, 'navigate', url=empty_url, new_tab=False, browser_session=browser_session)
 
 		assert isinstance(result, ActionResult)
 		# No error — the body IS a valid DOM root, just visually empty.

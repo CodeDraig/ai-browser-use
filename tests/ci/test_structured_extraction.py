@@ -17,6 +17,7 @@ from browser_use.llm.views import ChatInvokeCompletion
 from browser_use.tools.extraction.schema_utils import schema_dict_to_pydantic_model
 from browser_use.tools.extraction.views import ExtractionResult
 from browser_use.tools.service import Tools
+from tests.ci.action_helpers import execute_registered_action
 
 # ---------------------------------------------------------------------------
 # Unit tests: schema_dict_to_pydantic_model
@@ -372,7 +373,9 @@ class TestExtractStructured:
 	async def test_structured_extraction_returns_json(self, browser_session, base_url):
 		"""When output_schema is provided, extract returns structured JSON in <structured_result> tags."""
 		tools = Tools()
-		await tools.navigate(url=f'{base_url}/products', new_tab=False, browser_session=browser_session)
+		await execute_registered_action(
+			tools, 'navigate', url=f'{base_url}/products', new_tab=False, browser_session=browser_session
+		)
 		await asyncio.sleep(0.5)
 
 		output_schema = {
@@ -398,7 +401,9 @@ class TestExtractStructured:
 
 		with tempfile.TemporaryDirectory() as tmp:
 			fs = FileSystem(tmp)
-			result = await tools.extract(
+			result = await execute_registered_action(
+				tools,
+				'extract',
 				query='List all products with prices',
 				output_schema=output_schema,
 				browser_session=browser_session,
@@ -425,16 +430,20 @@ class TestExtractStructured:
 		assert meta['schema_used'] == output_schema
 
 	async def test_freetext_extraction_unchanged(self, browser_session, base_url):
-		"""When output_schema is None, extract returns free-text in <result> tags (backward compat)."""
+		"""When output_schema is None, extract uses the current free-text result contract."""
 		tools = Tools()
-		await tools.navigate(url=f'{base_url}/products', new_tab=False, browser_session=browser_session)
+		await execute_registered_action(
+			tools, 'navigate', url=f'{base_url}/products', new_tab=False, browser_session=browser_session
+		)
 		await asyncio.sleep(0.5)
 
 		extraction_llm = _make_extraction_llm(freetext_response='Widget A costs $9.99, Widget B costs $19.99')
 
 		with tempfile.TemporaryDirectory() as tmp:
 			fs = FileSystem(tmp)
-			result = await tools.extract(
+			result = await execute_registered_action(
+				tools,
+				'extract',
 				query='What products are listed?',
 				browser_session=browser_session,
 				page_extraction_llm=extraction_llm,
@@ -451,7 +460,9 @@ class TestExtractStructured:
 	async def test_invalid_schema_falls_back_to_freetext(self, browser_session, base_url):
 		"""When output_schema contains unsupported keywords, fall back to free-text gracefully."""
 		tools = Tools()
-		await tools.navigate(url=f'{base_url}/products', new_tab=False, browser_session=browser_session)
+		await execute_registered_action(
+			tools, 'navigate', url=f'{base_url}/products', new_tab=False, browser_session=browser_session
+		)
 		await asyncio.sleep(0.5)
 
 		bad_schema = {
@@ -464,7 +475,9 @@ class TestExtractStructured:
 
 		with tempfile.TemporaryDirectory() as tmp:
 			fs = FileSystem(tmp)
-			result = await tools.extract(
+			result = await execute_registered_action(
+				tools,
+				'extract',
 				query='Get products',
 				output_schema=bad_schema,
 				browser_session=browser_session,
@@ -511,14 +524,18 @@ class TestExtractionSchemaInjection:
 	async def test_injected_extraction_schema_triggers_structured_path(self, browser_session, base_url):
 		"""extraction_schema passed via act() triggers structured extraction even without output_schema in params."""
 		tools = Tools()
-		await tools.navigate(url=f'{base_url}/products', new_tab=False, browser_session=browser_session)
+		await execute_registered_action(
+			tools, 'navigate', url=f'{base_url}/products', new_tab=False, browser_session=browser_session
+		)
 		await asyncio.sleep(0.5)
 
 		extraction_llm = _make_extraction_llm(structured_response=MOCK_PRODUCTS)
 
 		with tempfile.TemporaryDirectory() as tmp:
 			fs = FileSystem(tmp)
-			result = await tools.extract(
+			result = await execute_registered_action(
+				tools,
+				'extract',
 				query='List all products with prices',
 				browser_session=browser_session,
 				page_extraction_llm=extraction_llm,
@@ -542,7 +559,9 @@ class TestExtractionSchemaInjection:
 	async def test_output_schema_takes_precedence_over_extraction_schema(self, browser_session, base_url):
 		"""When the LLM provides output_schema in params, it should take precedence over injected extraction_schema."""
 		tools = Tools()
-		await tools.navigate(url=f'{base_url}/products', new_tab=False, browser_session=browser_session)
+		await execute_registered_action(
+			tools, 'navigate', url=f'{base_url}/products', new_tab=False, browser_session=browser_session
+		)
 		await asyncio.sleep(0.5)
 
 		# Different schema than the injected one — just a name list
@@ -558,7 +577,9 @@ class TestExtractionSchemaInjection:
 
 		with tempfile.TemporaryDirectory() as tmp:
 			fs = FileSystem(tmp)
-			result = await tools.extract(
+			result = await execute_registered_action(
+				tools,
+				'extract',
 				query='List product names',
 				output_schema=param_schema,
 				browser_session=browser_session,
@@ -580,16 +601,20 @@ class TestExtractionSchemaInjection:
 		assert result.metadata['extraction_result']['schema_used'] == param_schema
 
 	async def test_no_schema_uses_freetext_path(self, browser_session, base_url):
-		"""When neither output_schema nor extraction_schema is provided, free-text path is used (backward compat)."""
+		"""When neither schema source is provided, extract uses the current free-text path."""
 		tools = Tools()
-		await tools.navigate(url=f'{base_url}/products', new_tab=False, browser_session=browser_session)
+		await execute_registered_action(
+			tools, 'navigate', url=f'{base_url}/products', new_tab=False, browser_session=browser_session
+		)
 		await asyncio.sleep(0.5)
 
 		extraction_llm = _make_extraction_llm(freetext_response='Widget A costs $9.99')
 
 		with tempfile.TemporaryDirectory() as tmp:
 			fs = FileSystem(tmp)
-			result = await tools.extract(
+			result = await execute_registered_action(
+				tools,
+				'extract',
 				query='What products are listed?',
 				browser_session=browser_session,
 				page_extraction_llm=extraction_llm,
@@ -606,7 +631,9 @@ class TestExtractionSchemaInjection:
 	async def test_extraction_schema_threads_through_act(self, browser_session, base_url):
 		"""extraction_schema passed to act() reaches extract() via the registry's special parameter injection."""
 		tools = Tools()
-		await tools.navigate(url=f'{base_url}/products', new_tab=False, browser_session=browser_session)
+		await execute_registered_action(
+			tools, 'navigate', url=f'{base_url}/products', new_tab=False, browser_session=browser_session
+		)
 		await asyncio.sleep(0.5)
 
 		extraction_llm = _make_extraction_llm(structured_response=MOCK_PRODUCTS)

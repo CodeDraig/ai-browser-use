@@ -15,6 +15,7 @@ from pytest_httpserver import HTTPServer
 
 from browser_use.browser import BrowserProfile, BrowserSession
 from browser_use.dom.markdown_extractor import extract_clean_markdown
+from tests.ci.action_helpers import execute_registered_action
 
 # --- Fixtures ---
 
@@ -234,7 +235,9 @@ class TestExtractImagesAutoDetection:
 		mock_llm.ainvoke.side_effect = capture_ainvoke
 
 		tools = Tools()
-		await tools.extract(
+		await execute_registered_action(
+			tools,
+			'extract',
 			query='get image url for each product',
 			browser_session=browser_session,
 			page_extraction_llm=mock_llm,
@@ -282,7 +285,9 @@ class TestExtractImagesAutoDetection:
 		mock_llm.ainvoke.side_effect = capture_ainvoke
 
 		tools = Tools()
-		await tools.extract(
+		await execute_registered_action(
+			tools,
+			'extract',
 			query='get product names and prices',
 			browser_session=browser_session,
 			page_extraction_llm=mock_llm,

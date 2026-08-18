@@ -69,7 +69,7 @@ if TYPE_CHECKING:
 	from browser_use.llm.openrouter.chat import ChatOpenRouter
 	from browser_use.llm.vercel.chat import ChatVercel
 	from browser_use.sandbox import sandbox
-	from browser_use.tools.service import Controller, Tools
+	from browser_use.tools.service import Tools
 
 	# Lazy imports mapping - only import when actually accessed
 _LAZY_IMPORTS = {
@@ -86,7 +86,6 @@ _LAZY_IMPORTS = {
 	'BrowserProfile': ('browser_use.browser', 'BrowserProfile'),
 	# Tools (moderate weight)
 	'Tools': ('browser_use.tools.service', 'Tools'),
-	'Controller': ('browser_use.tools.service', 'Controller'),  # alias
 	# DOM service (moderate weight)
 	'DomService': ('browser_use.dom.service', 'DomService'),
 	# Chat models (very heavy imports)
@@ -140,7 +139,6 @@ __all__ = [
 	'BrowserSession',
 	'Browser',  # Alias for BrowserSession
 	'BrowserProfile',
-	'Controller',
 	'DomService',
 	'SystemPrompt',
 	'ActionResult',
@@ -164,7 +162,6 @@ __all__ = [
 	'ChatOpenRouter',
 	'ChatVercel',
 	'Tools',
-	'Controller',
 	# LLM models module
 	'models',
 	# Sandbox execution

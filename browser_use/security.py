@@ -14,10 +14,7 @@ def collect_sensitive_data_values(sensitive_data: SensitiveData | None) -> dict[
 		return {}
 
 	return {
-		placeholder: value
-		for domain_values in sensitive_data.values()
-		for placeholder, value in domain_values.items()
-		if value
+		placeholder: value for domain_values in sensitive_data.values() for placeholder, value in domain_values.items() if value
 	}
 
 
@@ -113,9 +110,7 @@ def match_url_with_domain_pattern(url: str, domain_pattern: str, log_warnings: b
 
 		return fnmatch(domain, pattern_domain)
 	except Exception as error:
-		logger.error(
-			f'⛔️ Error matching URL {url} with pattern {domain_pattern}: {type(error).__name__}: {error}'
-		)
+		logger.error(f'⛔️ Error matching URL {url} with pattern {domain_pattern}: {type(error).__name__}: {error}')
 		return False
 
 

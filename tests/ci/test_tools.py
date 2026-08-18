@@ -14,6 +14,7 @@ from browser_use.browser import BrowserSession
 from browser_use.browser.profile import BrowserProfile
 from browser_use.filesystem.file_system import FileSystem
 from browser_use.tools.service import Tools
+from tests.ci.action_helpers import execute_registered_action
 
 
 @pytest.fixture(scope='session')
@@ -122,10 +123,12 @@ class TestToolsIntegration:
 			return ActionResult(extracted_content=f'Custom action executed with: {params.text} on {current_url}')
 
 		# Navigate to a page first
-		await tools.navigate(url=f'{base_url}/page1', new_tab=False, browser_session=browser_session)
+		await execute_registered_action(
+			tools, 'navigate', url=f'{base_url}/page1', new_tab=False, browser_session=browser_session
+		)
 
 		# Execute the custom action directly
-		result = await tools.custom_action(text='test_value', browser_session=browser_session)
+		result = await execute_registered_action(tools, 'custom_action', text='test_value', browser_session=browser_session)
 
 		# Verify the result
 		assert isinstance(result, ActionResult)
@@ -153,7 +156,7 @@ class TestToolsIntegration:
 		start_time = time.time()
 
 		# Execute wait action
-		result = await tools.wait(seconds=3, browser_session=browser_session)
+		result = await execute_registered_action(tools, 'wait', seconds=3, browser_session=browser_session)
 
 		# Record end time
 		end_time = time.time()
@@ -171,7 +174,7 @@ class TestToolsIntegration:
 		start_time = time.time()
 
 		# Execute wait action
-		result = await tools.wait(seconds=5, browser_session=browser_session)
+		result = await execute_registered_action(tools, 'wait', seconds=5, browser_session=browser_session)
 
 		# Record end time
 		end_time = time.time()
@@ -186,14 +189,18 @@ class TestToolsIntegration:
 	async def test_go_back_action(self, tools, browser_session, base_url):
 		"""Test that go_back action navigates to the previous page."""
 		# Navigate to first page
-		await tools.navigate(url=f'{base_url}/page1', new_tab=False, browser_session=browser_session)
+		await execute_registered_action(
+			tools, 'navigate', url=f'{base_url}/page1', new_tab=False, browser_session=browser_session
+		)
 
 		# Store the first page URL
 		first_url = await browser_session.get_current_page_url()
 		print(f'First page URL: {first_url}')
 
 		# Navigate to second page
-		await tools.navigate(url=f'{base_url}/page2', new_tab=False, browser_session=browser_session)
+		await execute_registered_action(
+			tools, 'navigate', url=f'{base_url}/page2', new_tab=False, browser_session=browser_session
+		)
 
 		# Verify we're on the second page
 		second_url = await browser_session.get_current_page_url()
@@ -201,7 +208,7 @@ class TestToolsIntegration:
 		assert f'{base_url}/page2' in second_url
 
 		# Execute go back action
-		result = await tools.go_back(browser_session=browser_session)
+		result = await execute_registered_action(tools, 'go_back', browser_session=browser_session)
 
 		# Verify the result
 		assert isinstance(result, ActionResult)
@@ -225,7 +232,7 @@ class TestToolsIntegration:
 
 		# Navigate to each page in sequence
 		for url in urls:
-			await tools.navigate(url=url, new_tab=False, browser_session=browser_session)
+			await execute_registered_action(tools, 'navigate', url=url, new_tab=False, browser_session=browser_session)
 
 			# Verify current page
 			current_url = await browser_session.get_current_page_url()
@@ -233,7 +240,7 @@ class TestToolsIntegration:
 
 		# Go back twice and verify each step
 		for expected_url in reversed(urls[:-1]):
-			await tools.go_back(browser_session=browser_session)
+			await execute_registered_action(tools, 'go_back', browser_session=browser_session)
 			await asyncio.sleep(1)  # Wait for navigation to complete
 
 			current_url = await browser_session.get_current_page_url()
@@ -258,7 +265,7 @@ class TestToolsIntegration:
 		await browser_session.get_current_page_url()
 
 		# Execute search action - it will actually navigate to our search results page
-		result = await tools.search(query='Python web automation', browser_session=browser_session)
+		result = await execute_registered_action(tools, 'search', query='Python web automation', browser_session=browser_session)
 
 		# Verify the result
 		assert isinstance(result, ActionResult)
@@ -276,13 +283,15 @@ class TestToolsIntegration:
 			file_system = FileSystem(temp_dir)
 
 			# First navigate to a page
-			await tools.navigate(url=f'{base_url}/page1', new_tab=False, browser_session=browser_session)
+			await execute_registered_action(
+				tools, 'navigate', url=f'{base_url}/page1', new_tab=False, browser_session=browser_session
+			)
 
 			success_done_message = 'Successfully completed task'
 
 			# Execute done action with file_system
-			result = await tools.done(
-				text=success_done_message, success=True, browser_session=browser_session, file_system=file_system
+			result = await execute_registered_action(
+				tools, 'done', text=success_done_message, success=True, browser_session=browser_session, file_system=file_system
 			)
 
 			# Verify the result
@@ -296,8 +305,8 @@ class TestToolsIntegration:
 			failed_done_message = 'Failed to complete task'
 
 			# Execute failed done action with file_system
-			result = await tools.done(
-				text=failed_done_message, success=False, browser_session=browser_session, file_system=file_system
+			result = await execute_registered_action(
+				tools, 'done', text=failed_done_message, success=False, browser_session=browser_session, file_system=file_system
 			)
 
 			# Verify the result
@@ -333,7 +342,9 @@ class TestToolsIntegration:
 		)
 
 		# Navigate to the dropdown test page
-		await tools.navigate(url=f'{base_url}/dropdown1', new_tab=False, browser_session=browser_session)
+		await execute_registered_action(
+			tools, 'navigate', url=f'{base_url}/dropdown1', new_tab=False, browser_session=browser_session
+		)
 
 		# Wait for the page to load using CDP
 		cdp_session = await browser_session.get_or_create_cdp_session()
@@ -366,7 +377,7 @@ class TestToolsIntegration:
 		)
 
 		# Execute the action with the dropdown index
-		result = await tools.dropdown_options(index=dropdown_index, browser_session=browser_session)
+		result = await execute_registered_action(tools, 'dropdown_options', index=dropdown_index, browser_session=browser_session)
 
 		expected_options = [
 			{'index': 0, 'text': 'Please select', 'value': ''},
@@ -445,7 +456,9 @@ class TestToolsIntegration:
 		)
 
 		# Navigate to the dropdown test page
-		await tools.navigate(url=f'{base_url}/dropdown2', new_tab=False, browser_session=browser_session)
+		await execute_registered_action(
+			tools, 'navigate', url=f'{base_url}/dropdown2', new_tab=False, browser_session=browser_session
+		)
 
 		# Wait for the page to load using CDP
 		cdp_session = await browser_session.get_or_create_cdp_session()
@@ -478,7 +491,9 @@ class TestToolsIntegration:
 		)
 
 		# Execute the action with the dropdown index
-		result = await tools.select_dropdown(index=dropdown_index, text='Second Option', browser_session=browser_session)
+		result = await execute_registered_action(
+			tools, 'select_dropdown', index=dropdown_index, text='Second Option', browser_session=browser_session
+		)
 
 		# Verify the result structure
 		assert isinstance(result, ActionResult)
@@ -510,7 +525,9 @@ class TestStructuredOutputDoneWithFiles:
 		with tempfile.TemporaryDirectory() as temp_dir:
 			file_system = FileSystem(temp_dir)
 
-			result = await tools.done(
+			result = await execute_registered_action(
+				tools,
+				'done',
 				data={'answer': 'hello'},
 				success=True,
 				browser_session=browser_session,
@@ -537,7 +554,9 @@ class TestStructuredOutputDoneWithFiles:
 			file_system = FileSystem(temp_dir)
 			await file_system.write_file('report.txt', 'some report content')
 
-			result = await tools.done(
+			result = await execute_registered_action(
+				tools,
+				'done',
 				data={'summary': 'done'},
 				success=True,
 				files_to_display=['report.txt'],
@@ -573,7 +592,9 @@ class TestStructuredOutputDoneWithFiles:
 			saved_downloads = browser_session._downloaded_files.copy()
 			browser_session._downloaded_files.append(fake_download)
 			try:
-				result = await tools.done(
+				result = await execute_registered_action(
+					tools,
+					'done',
 					data={'url': f'{base_url}/bill.pdf'},
 					success=True,
 					browser_session=browser_session,
@@ -610,7 +631,9 @@ class TestStructuredOutputDoneWithFiles:
 			saved_downloads = browser_session._downloaded_files.copy()
 			browser_session._downloaded_files.append(fs_path)
 			try:
-				result = await tools.done(
+				result = await execute_registered_action(
+					tools,
+					'done',
 					data={'status': 'ok'},
 					success=True,
 					files_to_display=['report.txt'],
@@ -637,7 +660,9 @@ class TestStructuredOutputDoneWithFiles:
 		with tempfile.TemporaryDirectory() as temp_dir:
 			file_system = FileSystem(temp_dir)
 
-			result = await tools.done(
+			result = await execute_registered_action(
+				tools,
+				'done',
 				data={'value': 42},
 				success=True,
 				files_to_display=['nonexistent.txt'],

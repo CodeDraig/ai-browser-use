@@ -7,6 +7,7 @@ import pytest
 from browser_use.browser.profile import BrowserProfile, ViewportSize
 from browser_use.browser.session import BrowserSession
 from browser_use.tools.service import Tools
+from tests.ci.action_helpers import execute_registered_action
 
 
 @pytest.fixture
@@ -116,7 +117,7 @@ class TestTrueCrossOriginIframeClick:
 		print(f'   Attempting to click element [{link_idx}] from example.com iframe...')
 
 		try:
-			result = await tools.click(index=link_idx, browser_session=browser_session)
+			result = await execute_registered_action(tools, 'click', index=link_idx, browser_session=browser_session)
 
 			# Check for errors
 			if result.error:

@@ -5,6 +5,7 @@ from browser_use.agent.views import ActionResult
 from browser_use.browser import BrowserSession
 from browser_use.browser.profile import BrowserProfile
 from browser_use.tools.service import Tools
+from tests.ci.action_helpers import execute_registered_action
 
 
 @pytest.fixture(scope='session')
@@ -151,7 +152,9 @@ class TestARIAMenuDropdown:
 	async def test_get_dropdown_options_with_aria_menu(self, tools, browser_session: BrowserSession, base_url):
 		"""Test that get_dropdown_options can retrieve options from ARIA menus."""
 		# Navigate to the ARIA menu test page
-		await tools.navigate(url=f'{base_url}/aria-menu', new_tab=False, browser_session=browser_session)
+		await execute_registered_action(
+			tools, 'navigate', url=f'{base_url}/aria-menu', new_tab=False, browser_session=browser_session
+		)
 
 		# Wait for the page to load
 		from browser_use.browser.events import NavigationCompleteEvent
@@ -167,7 +170,7 @@ class TestARIAMenuDropdown:
 		assert menu_index is not None, 'Could not find ARIA menu element'
 
 		# Execute the action with the menu index
-		result = await tools.dropdown_options(index=menu_index, browser_session=browser_session)
+		result = await execute_registered_action(tools, 'dropdown_options', index=menu_index, browser_session=browser_session)
 
 		# Verify the result structure
 		assert isinstance(result, ActionResult)
@@ -187,7 +190,9 @@ class TestARIAMenuDropdown:
 	async def test_select_dropdown_option_with_aria_menu(self, tools, browser_session: BrowserSession, base_url):
 		"""Test that select_dropdown_option can select an option from ARIA menus."""
 		# Navigate to the ARIA menu test page
-		await tools.navigate(url=f'{base_url}/aria-menu', new_tab=False, browser_session=browser_session)
+		await execute_registered_action(
+			tools, 'navigate', url=f'{base_url}/aria-menu', new_tab=False, browser_session=browser_session
+		)
 
 		# Wait for the page to load
 		from browser_use.browser.events import NavigationCompleteEvent
@@ -203,7 +208,9 @@ class TestARIAMenuDropdown:
 		assert menu_index is not None, 'Could not find ARIA menu element'
 
 		# Execute the action with the menu index to select "Filter"
-		result = await tools.select_dropdown(index=menu_index, text='Filter', browser_session=browser_session)
+		result = await execute_registered_action(
+			tools, 'select_dropdown', index=menu_index, text='Filter', browser_session=browser_session
+		)
 
 		# Verify the result structure
 		assert isinstance(result, ActionResult)
@@ -226,7 +233,9 @@ class TestARIAMenuDropdown:
 	async def test_get_dropdown_options_with_nested_aria_menu(self, tools, browser_session: BrowserSession, base_url):
 		"""Test that get_dropdown_options can handle nested ARIA menus (like Sort submenu)."""
 		# Navigate to the ARIA menu test page
-		await tools.navigate(url=f'{base_url}/aria-menu', new_tab=False, browser_session=browser_session)
+		await execute_registered_action(
+			tools, 'navigate', url=f'{base_url}/aria-menu', new_tab=False, browser_session=browser_session
+		)
 
 		# Wait for the page to load
 		from browser_use.browser.events import NavigationCompleteEvent
@@ -265,7 +274,9 @@ class TestARIAMenuDropdown:
 		)
 
 		# Execute the action with the menu index
-		result = await tools.dropdown_options(index=nested_menu_index, browser_session=browser_session)
+		result = await execute_registered_action(
+			tools, 'dropdown_options', index=nested_menu_index, browser_session=browser_session
+		)
 
 		# Verify the result structure
 		assert isinstance(result, ActionResult)

@@ -20,6 +20,7 @@ from browser_use.agent.service import Agent
 from browser_use.browser import BrowserSession
 from browser_use.browser.profile import BrowserProfile
 from browser_use.tools.service import Tools
+from tests.ci.action_helpers import execute_registered_action
 from tests.ci.conftest import create_mock_llm
 
 # ---------------------------------------------------------------------------
@@ -165,7 +166,9 @@ class TestStaticGuard:
 	async def test_navigate_aborts_remaining_actions(self, browser_session, base_url, tools):
 		"""When navigate is action 2/3, action 3 should never execute."""
 		# Start on a known page
-		await tools.navigate(url=f'{base_url}/static', new_tab=False, browser_session=browser_session)
+		await execute_registered_action(
+			tools, 'navigate', url=f'{base_url}/static', new_tab=False, browser_session=browser_session
+		)
 		await asyncio.sleep(0.5)
 
 		# Build action models: [scroll_down, navigate_to_page_a, scroll_down]
@@ -191,9 +194,13 @@ class TestStaticGuard:
 	async def test_go_back_aborts_remaining_actions(self, browser_session, base_url, tools):
 		"""go_back should abort remaining queued actions."""
 		# Navigate to page_a then page_b so go_back has somewhere to go
-		await tools.navigate(url=f'{base_url}/page_a', new_tab=False, browser_session=browser_session)
+		await execute_registered_action(
+			tools, 'navigate', url=f'{base_url}/page_a', new_tab=False, browser_session=browser_session
+		)
 		await asyncio.sleep(0.3)
-		await tools.navigate(url=f'{base_url}/page_b', new_tab=False, browser_session=browser_session)
+		await execute_registered_action(
+			tools, 'navigate', url=f'{base_url}/page_b', new_tab=False, browser_session=browser_session
+		)
 		await asyncio.sleep(0.3)
 
 		ActionModel = tools.registry.create_action_model()
@@ -221,7 +228,9 @@ class TestRuntimeGuard:
 
 	async def test_click_link_aborts_remaining(self, browser_session, base_url, tools):
 		"""Click a link that navigates to another page — remaining actions skipped."""
-		await tools.navigate(url=f'{base_url}/page_a', new_tab=False, browser_session=browser_session)
+		await execute_registered_action(
+			tools, 'navigate', url=f'{base_url}/page_a', new_tab=False, browser_session=browser_session
+		)
 		await asyncio.sleep(0.5)
 
 		# Get the selector map to find the link index
@@ -268,7 +277,9 @@ class TestSafeChain:
 
 	async def test_multiple_scrolls_all_execute(self, browser_session, base_url, tools):
 		"""Multiple scroll actions should all execute."""
-		await tools.navigate(url=f'{base_url}/static', new_tab=False, browser_session=browser_session)
+		await execute_registered_action(
+			tools, 'navigate', url=f'{base_url}/static', new_tab=False, browser_session=browser_session
+		)
 		await asyncio.sleep(0.5)
 
 		ActionModel = tools.registry.create_action_model()

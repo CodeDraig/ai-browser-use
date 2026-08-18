@@ -1,3 +1,4 @@
+import importlib
 import importlib.util
 from pathlib import Path
 
@@ -101,3 +102,56 @@ def test_removed_alternate_agent_surface_is_absent():
 			content = path.read_text(encoding='utf-8')
 			assert removed_import not in content, path
 			assert removed_error not in content, path
+
+
+def test_legacy_tools_surfaces_are_absent():
+	assert not (REPOSITORY_ROOT / 'browser_use' / 'controller').exists()
+	assert not (REPOSITORY_ROOT / 'browser_use' / 'tools' / 'default_actions.py').exists()
+
+	browser_use = importlib.import_module('browser_use')
+	tool_views = importlib.import_module('browser_use.tools.views')
+	tools_service = importlib.import_module('browser_use.tools.service')
+
+	assert not hasattr(browser_use, 'Controller')
+	assert not hasattr(tool_views, 'SearchGoogleAction')
+	assert not hasattr(tool_views, 'GoToUrlAction')
+	assert '__getattr__' not in tools_service.Tools.__dict__
+	assert not hasattr(tools_service.Tools(), 'navigate')
+
+	removed_action_module = 'browser_use.tools.' + 'default_actions'
+	for path in (REPOSITORY_ROOT / 'browser_use').rglob('*.py'):
+		assert removed_action_module not in path.read_text(encoding='utf-8'), path
+
+	extraction_source = (REPOSITORY_ROOT / 'browser_use' / 'tools' / 'actions' / 'extraction.py').read_text(encoding='utf-8')
+	assert 'isinstance(params, dict)' not in extraction_source
+
+
+def test_default_action_protocol_order_is_stable():
+	from browser_use.tools.service import Tools
+
+	assert list(Tools().registry.registry.actions) == [
+		'done',
+		'search',
+		'navigate',
+		'go_back',
+		'wait',
+		'click',
+		'input',
+		'upload_file',
+		'switch',
+		'close',
+		'extract',
+		'search_page',
+		'find_elements',
+		'scroll',
+		'send_keys',
+		'find_text',
+		'screenshot',
+		'save_as_pdf',
+		'dropdown_options',
+		'select_dropdown',
+		'write_file',
+		'replace_file',
+		'read_file',
+		'evaluate',
+	]

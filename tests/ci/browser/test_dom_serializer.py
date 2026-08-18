@@ -17,6 +17,7 @@ from pytest_httpserver import HTTPServer
 from browser_use.agent.service import Agent
 from browser_use.browser import BrowserSession
 from browser_use.browser.profile import BrowserProfile, ViewportSize
+from tests.ci.action_helpers import execute_registered_action
 from tests.ci.conftest import create_mock_llm
 
 
@@ -112,7 +113,9 @@ class TestDOMSerializer:
 			}}
 			"""
 		]
-		await tools.navigate(url=f'{base_url}/dom-test-main', new_tab=False, browser_session=browser_session)
+		await execute_registered_action(
+			tools, 'navigate', url=f'{base_url}/dom-test-main', new_tab=False, browser_session=browser_session
+		)
 
 		import asyncio
 
@@ -202,12 +205,12 @@ class TestDOMSerializer:
 			f'Should find at least 1 iframe content element, found {len(iframe_content_elements)}'
 		)
 
-		# Now test clicking elements from each category using tools.click(index)
+		# Now test clicking elements from each category using execute_registered_action(tools, 'click', index)
 		print('\n🖱️  Testing Click Functionality:')
 
-		# Helper to call tools.click(index) and verify it worked
+		# Helper to call execute_registered_action(tools, 'click', index) and verify it worked
 		async def click(index: int, element_description: str, browser_session: BrowserSession):
-			result = await tools.click(index=index, browser_session=browser_session)
+			result = await execute_registered_action(tools, 'click', index=index, browser_session=browser_session)
 			# Check both error field and extracted_content for failure messages
 			if result.error:
 				raise AssertionError(f'Click on {element_description} [{index}] failed: {result.error}')
@@ -359,7 +362,9 @@ class TestDOMSerializer:
 		tools = Tools()
 
 		# Navigate to stacked test page
-		await tools.navigate(url=f'{base_url}/stacked-test', new_tab=False, browser_session=browser_session)
+		await execute_registered_action(
+			tools, 'navigate', url=f'{base_url}/stacked-test', new_tab=False, browser_session=browser_session
+		)
 
 		import asyncio
 
@@ -409,7 +414,7 @@ class TestDOMSerializer:
 		print('\n🖱️  Testing Click Functionality Through Stacked Layers:')
 
 		async def click(index: int, element_description: str, browser_session: BrowserSession):
-			result = await tools.click(index=index, browser_session=browser_session)
+			result = await execute_registered_action(tools, 'click', index=index, browser_session=browser_session)
 			if result.error:
 				raise AssertionError(f'Click on {element_description} [{index}] failed: {result.error}')
 			if result.extracted_content and (

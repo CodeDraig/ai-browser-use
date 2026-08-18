@@ -21,6 +21,7 @@ from browser_use.agent.views import ActionResult
 from browser_use.browser import BrowserSession
 from browser_use.browser.profile import BrowserProfile
 from browser_use.tools.service import Tools
+from tests.ci.action_helpers import execute_registered_action
 
 
 @pytest.fixture(scope='session')
@@ -183,14 +184,16 @@ class TestAutocompleteInteraction:
 
 	async def test_value_mismatch_detected(self, tools: Tools, browser_session: BrowserSession, base_url: str):
 		"""Type into a field whose JS rewrites the value on change. Assert the ActionResult notes the mismatch."""
-		await tools.navigate(url=f'{base_url}/autocomplete-rewrite', new_tab=False, browser_session=browser_session)
+		await execute_registered_action(
+			tools, 'navigate', url=f'{base_url}/autocomplete-rewrite', new_tab=False, browser_session=browser_session
+		)
 		await asyncio.sleep(0.3)
 		await browser_session.get_browser_state_summary()
 
 		input_index = await browser_session.get_index_by_id('search')
 		assert input_index is not None, 'Could not find search input'
 
-		result = await tools.input(index=input_index, text='hello', browser_session=browser_session)
+		result = await execute_registered_action(tools, 'input', index=input_index, text='hello', browser_session=browser_session)
 
 		assert isinstance(result, ActionResult)
 		assert result.extracted_content is not None
@@ -200,14 +203,16 @@ class TestAutocompleteInteraction:
 
 	async def test_combobox_field_detected(self, tools: Tools, browser_session: BrowserSession, base_url: str):
 		"""Type into a combobox field. Assert the ActionResult includes autocomplete guidance."""
-		await tools.navigate(url=f'{base_url}/combobox-field', new_tab=False, browser_session=browser_session)
+		await execute_registered_action(
+			tools, 'navigate', url=f'{base_url}/combobox-field', new_tab=False, browser_session=browser_session
+		)
 		await asyncio.sleep(0.3)
 		await browser_session.get_browser_state_summary()
 
 		combo_index = await browser_session.get_index_by_id('combo')
 		assert combo_index is not None, 'Could not find combobox input'
 
-		result = await tools.input(index=combo_index, text='test', browser_session=browser_session)
+		result = await execute_registered_action(tools, 'input', index=combo_index, text='test', browser_session=browser_session)
 
 		assert isinstance(result, ActionResult)
 		assert result.extracted_content is not None
@@ -217,14 +222,16 @@ class TestAutocompleteInteraction:
 
 	async def test_datalist_field_detected(self, tools: Tools, browser_session: BrowserSession, base_url: str):
 		"""Type into a datalist-backed field. Assert the ActionResult includes autocomplete guidance."""
-		await tools.navigate(url=f'{base_url}/datalist-field', new_tab=False, browser_session=browser_session)
+		await execute_registered_action(
+			tools, 'navigate', url=f'{base_url}/datalist-field', new_tab=False, browser_session=browser_session
+		)
 		await asyncio.sleep(0.3)
 		await browser_session.get_browser_state_summary()
 
 		city_index = await browser_session.get_index_by_id('city')
 		assert city_index is not None, 'Could not find datalist input'
 
-		result = await tools.input(index=city_index, text='New', browser_session=browser_session)
+		result = await execute_registered_action(tools, 'input', index=city_index, text='New', browser_session=browser_session)
 
 		assert isinstance(result, ActionResult)
 		assert result.extracted_content is not None
@@ -234,14 +241,16 @@ class TestAutocompleteInteraction:
 
 	async def test_normal_input_no_false_positive(self, tools: Tools, browser_session: BrowserSession, base_url: str):
 		"""Type into a plain input. Assert the ActionResult does NOT contain autocomplete guidance."""
-		await tools.navigate(url=f'{base_url}/normal-input', new_tab=False, browser_session=browser_session)
+		await execute_registered_action(
+			tools, 'navigate', url=f'{base_url}/normal-input', new_tab=False, browser_session=browser_session
+		)
 		await asyncio.sleep(0.3)
 		await browser_session.get_browser_state_summary()
 
 		plain_index = await browser_session.get_index_by_id('plain')
 		assert plain_index is not None, 'Could not find plain input'
 
-		result = await tools.input(index=plain_index, text='hello', browser_session=browser_session)
+		result = await execute_registered_action(tools, 'input', index=plain_index, text='hello', browser_session=browser_session)
 
 		assert isinstance(result, ActionResult)
 		assert result.extracted_content is not None
@@ -251,7 +260,9 @@ class TestAutocompleteInteraction:
 
 	async def test_sensitive_data_skips_value_verification(self, tools: Tools, browser_session: BrowserSession, base_url: str):
 		"""Type sensitive data into the rewrite field. Assert no 'differs from typed text' note appears."""
-		await tools.navigate(url=f'{base_url}/autocomplete-rewrite', new_tab=False, browser_session=browser_session)
+		await execute_registered_action(
+			tools, 'navigate', url=f'{base_url}/autocomplete-rewrite', new_tab=False, browser_session=browser_session
+		)
 		await asyncio.sleep(0.3)
 		await browser_session.get_browser_state_summary()
 
@@ -259,7 +270,9 @@ class TestAutocompleteInteraction:
 		assert input_index is not None, 'Could not find search input'
 
 		# Use tools.act() with sensitive_data to trigger the sensitive code path
-		result = await tools.input(
+		result = await execute_registered_action(
+			tools,
+			'input',
 			index=input_index,
 			text='secret123',
 			browser_session=browser_session,
@@ -274,14 +287,16 @@ class TestAutocompleteInteraction:
 
 	async def test_prefilled_input_cleared_by_default(self, tools: Tools, browser_session: BrowserSession, base_url: str):
 		"""Type into a pre-filled input with clear=True (default). Field should contain only the new text."""
-		await tools.navigate(url=f'{base_url}/prefilled-input', new_tab=False, browser_session=browser_session)
+		await execute_registered_action(
+			tools, 'navigate', url=f'{base_url}/prefilled-input', new_tab=False, browser_session=browser_session
+		)
 		await asyncio.sleep(0.3)
 		await browser_session.get_browser_state_summary()
 
 		idx = await browser_session.get_index_by_id('prefilled')
 		assert idx is not None, 'Could not find prefilled input'
 
-		result = await tools.input(index=idx, text='new value', browser_session=browser_session)
+		result = await execute_registered_action(tools, 'input', index=idx, text='new value', browser_session=browser_session)
 
 		assert isinstance(result, ActionResult)
 		assert result.error is None, f'Input action failed: {result.error}'
@@ -297,14 +312,18 @@ class TestAutocompleteInteraction:
 
 	async def test_prefilled_input_append_with_clear_false(self, tools: Tools, browser_session: BrowserSession, base_url: str):
 		"""Type into a pre-filled input with clear=False. Field should contain old + new text."""
-		await tools.navigate(url=f'{base_url}/prefilled-input', new_tab=False, browser_session=browser_session)
+		await execute_registered_action(
+			tools, 'navigate', url=f'{base_url}/prefilled-input', new_tab=False, browser_session=browser_session
+		)
 		await asyncio.sleep(0.3)
 		await browser_session.get_browser_state_summary()
 
 		idx = await browser_session.get_index_by_id('prefilled')
 		assert idx is not None, 'Could not find prefilled input'
 
-		result = await tools.input(index=idx, text=' appended', clear=False, browser_session=browser_session)
+		result = await execute_registered_action(
+			tools, 'input', index=idx, text=' appended', clear=False, browser_session=browser_session
+		)
 
 		assert isinstance(result, ActionResult)
 		assert result.error is None, f'Input action failed: {result.error}'
@@ -320,14 +339,16 @@ class TestAutocompleteInteraction:
 
 	async def test_concatenation_retry_on_sticky_field(self, tools: Tools, browser_session: BrowserSession, base_url: str):
 		"""Type into a field where clearing is resisted by JS. The retry should fix the value."""
-		await tools.navigate(url=f'{base_url}/sticky-input', new_tab=False, browser_session=browser_session)
+		await execute_registered_action(
+			tools, 'navigate', url=f'{base_url}/sticky-input', new_tab=False, browser_session=browser_session
+		)
 		await asyncio.sleep(0.3)
 		await browser_session.get_browser_state_summary()
 
 		idx = await browser_session.get_index_by_id('sticky')
 		assert idx is not None, 'Could not find sticky input'
 
-		result = await tools.input(index=idx, text='typed_text', browser_session=browser_session)
+		result = await execute_registered_action(tools, 'input', index=idx, text='typed_text', browser_session=browser_session)
 
 		assert isinstance(result, ActionResult)
 		assert result.error is None, f'Input action failed: {result.error}'
@@ -350,14 +371,16 @@ class TestAutocompleteInteraction:
 		"""Typing into a combobox (role=combobox) field should take >= 400ms due to the mechanical delay."""
 		import time
 
-		await tools.navigate(url=f'{base_url}/combobox-field', new_tab=False, browser_session=browser_session)
+		await execute_registered_action(
+			tools, 'navigate', url=f'{base_url}/combobox-field', new_tab=False, browser_session=browser_session
+		)
 		await asyncio.sleep(0.3)
 		await browser_session.get_browser_state_summary()
 		combo_idx = await browser_session.get_index_by_id('combo')
 		assert combo_idx is not None
 
 		t0 = time.monotonic()
-		await tools.input(index=combo_idx, text='hi', browser_session=browser_session)
+		await execute_registered_action(tools, 'input', index=combo_idx, text='hi', browser_session=browser_session)
 		duration = time.monotonic() - t0
 
 		# The 400ms sleep is a hard floor — total duration must exceed it
@@ -367,14 +390,16 @@ class TestAutocompleteInteraction:
 		"""Native datalist fields should NOT get the 400ms delay — browser handles them instantly."""
 		import time
 
-		await tools.navigate(url=f'{base_url}/datalist-field', new_tab=False, browser_session=browser_session)
+		await execute_registered_action(
+			tools, 'navigate', url=f'{base_url}/datalist-field', new_tab=False, browser_session=browser_session
+		)
 		await asyncio.sleep(0.3)
 		await browser_session.get_browser_state_summary()
 		city_idx = await browser_session.get_index_by_id('city')
 		assert city_idx is not None
 
 		t0 = time.monotonic()
-		await tools.input(index=city_idx, text='Chi', browser_session=browser_session)
+		await execute_registered_action(tools, 'input', index=city_idx, text='Chi', browser_session=browser_session)
 		duration = time.monotonic() - t0
 
 		# Datalist fields should complete without the 400ms tax.

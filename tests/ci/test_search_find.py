@@ -8,6 +8,7 @@ from pytest_httpserver import HTTPServer
 from browser_use.agent.views import ActionResult
 from browser_use.browser import BrowserProfile, BrowserSession
 from browser_use.tools.service import Tools
+from tests.ci.action_helpers import execute_registered_action
 
 # --- Fixtures ---
 
@@ -156,7 +157,7 @@ def tools():
 
 async def _navigate_and_wait(tools, browser_session, url):
 	"""Navigate to URL and wait for page load."""
-	await tools.navigate(url=url, new_tab=False, browser_session=browser_session)
+	await execute_registered_action(tools, 'navigate', url=url, new_tab=False, browser_session=browser_session)
 	await asyncio.sleep(0.5)
 
 
@@ -170,7 +171,7 @@ class TestSearchPage:
 		"""Literal text search finds matches with context."""
 		await _navigate_and_wait(tools, browser_session, f'{base_url}/products')
 
-		result = await tools.search_page(pattern='Widget A', browser_session=browser_session)
+		result = await execute_registered_action(tools, 'search_page', pattern='Widget A', browser_session=browser_session)
 
 		assert isinstance(result, ActionResult)
 		assert result.error is None
@@ -182,7 +183,9 @@ class TestSearchPage:
 		"""Regex search finds all price patterns on the page."""
 		await _navigate_and_wait(tools, browser_session, f'{base_url}/products')
 
-		result = await tools.search_page(pattern=r'\$\d+\.\d{2}', regex=True, browser_session=browser_session)
+		result = await execute_registered_action(
+			tools, 'search_page', pattern=r'\$\d+\.\d{2}', regex=True, browser_session=browser_session
+		)
 
 		assert isinstance(result, ActionResult)
 		assert result.error is None
@@ -197,7 +200,9 @@ class TestSearchPage:
 		await _navigate_and_wait(tools, browser_session, f'{base_url}/products')
 
 		# Search only in footer
-		result = await tools.search_page(pattern='price', css_scope='#footer', browser_session=browser_session)
+		result = await execute_registered_action(
+			tools, 'search_page', pattern='price', css_scope='#footer', browser_session=browser_session
+		)
 
 		assert isinstance(result, ActionResult)
 		assert result.error is None
@@ -210,7 +215,7 @@ class TestSearchPage:
 		"""Search is case-insensitive by default."""
 		await _navigate_and_wait(tools, browser_session, f'{base_url}/case-test')
 
-		result = await tools.search_page(pattern='quick brown fox', browser_session=browser_session)
+		result = await execute_registered_action(tools, 'search_page', pattern='quick brown fox', browser_session=browser_session)
 
 		assert isinstance(result, ActionResult)
 		assert result.error is None
@@ -222,7 +227,9 @@ class TestSearchPage:
 		"""case_sensitive=True restricts to exact case."""
 		await _navigate_and_wait(tools, browser_session, f'{base_url}/case-test')
 
-		result = await tools.search_page(pattern='QUICK BROWN FOX', case_sensitive=True, browser_session=browser_session)
+		result = await execute_registered_action(
+			tools, 'search_page', pattern='QUICK BROWN FOX', case_sensitive=True, browser_session=browser_session
+		)
 
 		assert isinstance(result, ActionResult)
 		assert result.error is None
@@ -233,7 +240,9 @@ class TestSearchPage:
 		"""max_results limits the number of returned matches."""
 		await _navigate_and_wait(tools, browser_session, f'{base_url}/products')
 
-		result = await tools.search_page(pattern=r'\$\d+\.\d{2}', regex=True, max_results=2, browser_session=browser_session)
+		result = await execute_registered_action(
+			tools, 'search_page', pattern=r'\$\d+\.\d{2}', regex=True, max_results=2, browser_session=browser_session
+		)
 
 		assert isinstance(result, ActionResult)
 		assert result.error is None
@@ -246,7 +255,7 @@ class TestSearchPage:
 		"""No matches returns a clean message, not an error."""
 		await _navigate_and_wait(tools, browser_session, f'{base_url}/products')
 
-		result = await tools.search_page(pattern='xyznonexistent', browser_session=browser_session)
+		result = await execute_registered_action(tools, 'search_page', pattern='xyznonexistent', browser_session=browser_session)
 
 		assert isinstance(result, ActionResult)
 		assert result.error is None
@@ -257,7 +266,7 @@ class TestSearchPage:
 		"""Matches include the element path for context."""
 		await _navigate_and_wait(tools, browser_session, f'{base_url}/products')
 
-		result = await tools.search_page(pattern='guarantee', browser_session=browser_session)
+		result = await execute_registered_action(tools, 'search_page', pattern='guarantee', browser_session=browser_session)
 
 		assert isinstance(result, ActionResult)
 		assert result.error is None
@@ -269,7 +278,9 @@ class TestSearchPage:
 		"""Invalid css_scope returns a clear error."""
 		await _navigate_and_wait(tools, browser_session, f'{base_url}/products')
 
-		result = await tools.search_page(pattern='test', css_scope='#nonexistent-scope', browser_session=browser_session)
+		result = await execute_registered_action(
+			tools, 'search_page', pattern='test', css_scope='#nonexistent-scope', browser_session=browser_session
+		)
 
 		assert isinstance(result, ActionResult)
 		assert result.error is not None
@@ -279,7 +290,7 @@ class TestSearchPage:
 		"""long_term_memory is set with match count summary."""
 		await _navigate_and_wait(tools, browser_session, f'{base_url}/products')
 
-		result = await tools.search_page(pattern='Widget', browser_session=browser_session)
+		result = await execute_registered_action(tools, 'search_page', pattern='Widget', browser_session=browser_session)
 
 		assert isinstance(result, ActionResult)
 		assert result.long_term_memory is not None
@@ -297,7 +308,9 @@ class TestFindElements:
 		"""Basic CSS selector returns correct elements."""
 		await _navigate_and_wait(tools, browser_session, f'{base_url}/products')
 
-		result = await tools.find_elements(selector='tr.product-row', browser_session=browser_session)
+		result = await execute_registered_action(
+			tools, 'find_elements', selector='tr.product-row', browser_session=browser_session
+		)
 
 		assert isinstance(result, ActionResult)
 		assert result.error is None
@@ -310,7 +323,9 @@ class TestFindElements:
 		"""attributes parameter extracts specific attributes from elements."""
 		await _navigate_and_wait(tools, browser_session, f'{base_url}/products')
 
-		result = await tools.find_elements(
+		result = await execute_registered_action(
+			tools,
+			'find_elements',
 			selector='a.page-link',
 			attributes=['href', 'class'],
 			browser_session=browser_session,
@@ -327,7 +342,9 @@ class TestFindElements:
 		"""max_results limits displayed elements while showing total count."""
 		await _navigate_and_wait(tools, browser_session, f'{base_url}/products')
 
-		result = await tools.find_elements(selector='tr.product-row', max_results=2, browser_session=browser_session)
+		result = await execute_registered_action(
+			tools, 'find_elements', selector='tr.product-row', max_results=2, browser_session=browser_session
+		)
 
 		assert isinstance(result, ActionResult)
 		assert result.error is None
@@ -339,7 +356,9 @@ class TestFindElements:
 		"""No matches returns a clean message, not an error."""
 		await _navigate_and_wait(tools, browser_session, f'{base_url}/products')
 
-		result = await tools.find_elements(selector='div.nonexistent', browser_session=browser_session)
+		result = await execute_registered_action(
+			tools, 'find_elements', selector='div.nonexistent', browser_session=browser_session
+		)
 
 		assert isinstance(result, ActionResult)
 		assert result.error is None
@@ -350,7 +369,7 @@ class TestFindElements:
 		"""Invalid CSS selector returns a clear error, not a crash."""
 		await _navigate_and_wait(tools, browser_session, f'{base_url}/products')
 
-		result = await tools.find_elements(selector='[[[invalid', browser_session=browser_session)
+		result = await execute_registered_action(tools, 'find_elements', selector='[[[invalid', browser_session=browser_session)
 
 		assert isinstance(result, ActionResult)
 		assert result.error is not None
@@ -360,7 +379,9 @@ class TestFindElements:
 		"""include_text=False omits text content from results."""
 		await _navigate_and_wait(tools, browser_session, f'{base_url}/articles')
 
-		result = await tools.find_elements(selector='article', include_text=False, browser_session=browser_session)
+		result = await execute_registered_action(
+			tools, 'find_elements', selector='article', include_text=False, browser_session=browser_session
+		)
 
 		assert isinstance(result, ActionResult)
 		assert result.error is None
@@ -374,7 +395,9 @@ class TestFindElements:
 		"""Nested CSS selectors (child combinator) work correctly."""
 		await _navigate_and_wait(tools, browser_session, f'{base_url}/articles')
 
-		result = await tools.find_elements(
+		result = await execute_registered_action(
+			tools,
+			'find_elements',
 			selector='article a.read-more',
 			attributes=['href'],
 			browser_session=browser_session,
@@ -392,7 +415,9 @@ class TestFindElements:
 		"""Elements show children count."""
 		await _navigate_and_wait(tools, browser_session, f'{base_url}/products')
 
-		result = await tools.find_elements(selector='table.products thead tr', browser_session=browser_session)
+		result = await execute_registered_action(
+			tools, 'find_elements', selector='table.products thead tr', browser_session=browser_session
+		)
 
 		assert isinstance(result, ActionResult)
 		assert result.error is None
@@ -405,7 +430,9 @@ class TestFindElements:
 		"""long_term_memory is set with element count summary."""
 		await _navigate_and_wait(tools, browser_session, f'{base_url}/products')
 
-		result = await tools.find_elements(selector='tr.product-row', browser_session=browser_session)
+		result = await execute_registered_action(
+			tools, 'find_elements', selector='tr.product-row', browser_session=browser_session
+		)
 
 		assert isinstance(result, ActionResult)
 		assert result.long_term_memory is not None
@@ -415,7 +442,7 @@ class TestFindElements:
 		"""Works on a nearly empty page without errors."""
 		await _navigate_and_wait(tools, browser_session, f'{base_url}/empty')
 
-		result = await tools.find_elements(selector='p', browser_session=browser_session)
+		result = await execute_registered_action(tools, 'find_elements', selector='p', browser_session=browser_session)
 
 		assert isinstance(result, ActionResult)
 		assert result.error is None
@@ -426,7 +453,9 @@ class TestFindElements:
 		"""find_elements with attributes=['src'] returns absolute URLs for img elements."""
 		await _navigate_and_wait(tools, browser_session, f'{base_url}/images-page')
 
-		result = await tools.find_elements(
+		result = await execute_registered_action(
+			tools,
+			'find_elements',
 			selector='img',
 			attributes=['src'],
 			browser_session=browser_session,

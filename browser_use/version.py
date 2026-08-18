@@ -64,9 +64,7 @@ def get_git_info() -> dict[str, str] | None:
 			return None
 
 		def git_output(*args: str) -> str:
-			return subprocess.check_output(
-				['git', *args], cwd=package_root, stderr=subprocess.DEVNULL
-			).decode().strip()
+			return subprocess.check_output(['git', *args], cwd=package_root, stderr=subprocess.DEVNULL).decode().strip()
 
 		return {
 			'commit_hash': git_output('rev-parse', 'HEAD'),

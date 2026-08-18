@@ -496,7 +496,7 @@ class TestExistingToolsActions:
 		async def test_input(params: InputTextAction, browser_session: BrowserSession):
 			return ActionResult(extracted_content=f'Input text: {params.text} at index: {params.index}')
 
-		# Test SearchGoogleAction
+		# Test SearchAction
 		result1 = await registry.execute_action('test_search', {'query': 'python testing'}, browser_session=browser_session)
 		assert result1.extracted_content is not None
 		assert 'Searched for: python testing' in result1.extracted_content
@@ -510,13 +510,6 @@ class TestExistingToolsActions:
 		result3 = await registry.execute_action('test_input', {'index': 5, 'text': 'test input'}, browser_session=browser_session)
 		assert result3.extracted_content is not None
 		assert 'Input text: test input at index: 5' in result3.extracted_content
-
-	async def test_renamed_action_models_keep_old_names_importable(self):
-		"""Renamed action params models must stay importable under their pre-rename names."""
-		from browser_use.tools.views import GoToUrlAction, NavigateAction, SearchAction, SearchGoogleAction
-
-		assert SearchGoogleAction is SearchAction
-		assert GoToUrlAction is NavigateAction
 
 	async def test_pydantic_vs_individual_params_consistency(self, registry, browser_session):
 		"""Test that pydantic and individual parameter patterns produce consistent results"""

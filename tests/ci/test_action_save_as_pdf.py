@@ -10,6 +10,7 @@ from browser_use.browser import BrowserSession
 from browser_use.browser.profile import BrowserProfile
 from browser_use.filesystem.file_system import FileSystem
 from browser_use.tools.service import Tools
+from tests.ci.action_helpers import execute_registered_action
 
 
 @pytest.fixture(scope='session')
@@ -103,12 +104,16 @@ class TestSaveAsPdf:
 
 	async def test_save_as_pdf_default_filename(self, tools, browser_session, base_url):
 		"""save_as_pdf with no filename uses the page title."""
-		await tools.navigate(url=f'{base_url}/pdf-test', new_tab=False, browser_session=browser_session)
+		await execute_registered_action(
+			tools, 'navigate', url=f'{base_url}/pdf-test', new_tab=False, browser_session=browser_session
+		)
 		await asyncio.sleep(0.5)
 
 		with tempfile.TemporaryDirectory() as temp_dir:
 			file_system = FileSystem(temp_dir)
-			result = await tools.save_as_pdf(browser_session=browser_session, file_system=file_system)
+			result = await execute_registered_action(
+				tools, 'save_as_pdf', browser_session=browser_session, file_system=file_system
+			)
 
 			assert isinstance(result, ActionResult)
 			assert result.extracted_content is not None
@@ -127,12 +132,16 @@ class TestSaveAsPdf:
 
 	async def test_save_as_pdf_custom_filename(self, tools, browser_session, base_url):
 		"""save_as_pdf with a custom filename uses that name."""
-		await tools.navigate(url=f'{base_url}/pdf-test', new_tab=False, browser_session=browser_session)
+		await execute_registered_action(
+			tools, 'navigate', url=f'{base_url}/pdf-test', new_tab=False, browser_session=browser_session
+		)
 		await asyncio.sleep(0.5)
 
 		with tempfile.TemporaryDirectory() as temp_dir:
 			file_system = FileSystem(temp_dir)
-			result = await tools.save_as_pdf(
+			result = await execute_registered_action(
+				tools,
+				'save_as_pdf',
 				file_name='my-report',
 				browser_session=browser_session,
 				file_system=file_system,
@@ -148,12 +157,16 @@ class TestSaveAsPdf:
 
 	async def test_save_as_pdf_custom_filename_with_extension(self, tools, browser_session, base_url):
 		"""save_as_pdf doesn't double the .pdf extension."""
-		await tools.navigate(url=f'{base_url}/pdf-test', new_tab=False, browser_session=browser_session)
+		await execute_registered_action(
+			tools, 'navigate', url=f'{base_url}/pdf-test', new_tab=False, browser_session=browser_session
+		)
 		await asyncio.sleep(0.5)
 
 		with tempfile.TemporaryDirectory() as temp_dir:
 			file_system = FileSystem(temp_dir)
-			result = await tools.save_as_pdf(
+			result = await execute_registered_action(
+				tools,
+				'save_as_pdf',
 				file_name='already.pdf',
 				browser_session=browser_session,
 				file_system=file_system,
@@ -168,14 +181,18 @@ class TestSaveAsPdf:
 
 	async def test_save_as_pdf_duplicate_filename(self, tools, browser_session, base_url):
 		"""save_as_pdf increments filename when a duplicate exists."""
-		await tools.navigate(url=f'{base_url}/pdf-test', new_tab=False, browser_session=browser_session)
+		await execute_registered_action(
+			tools, 'navigate', url=f'{base_url}/pdf-test', new_tab=False, browser_session=browser_session
+		)
 		await asyncio.sleep(0.5)
 
 		with tempfile.TemporaryDirectory() as temp_dir:
 			file_system = FileSystem(temp_dir)
 
 			# Save first PDF
-			result1 = await tools.save_as_pdf(
+			result1 = await execute_registered_action(
+				tools,
+				'save_as_pdf',
 				file_name='duplicate',
 				browser_session=browser_session,
 				file_system=file_system,
@@ -185,7 +202,9 @@ class TestSaveAsPdf:
 			assert attachments1[0].endswith('duplicate.pdf')
 
 			# Save second PDF with same name
-			result2 = await tools.save_as_pdf(
+			result2 = await execute_registered_action(
+				tools,
+				'save_as_pdf',
 				file_name='duplicate',
 				browser_session=browser_session,
 				file_system=file_system,
@@ -196,12 +215,16 @@ class TestSaveAsPdf:
 
 	async def test_save_as_pdf_landscape(self, tools, browser_session, base_url):
 		"""save_as_pdf with landscape=True produces a valid PDF."""
-		await tools.navigate(url=f'{base_url}/pdf-test', new_tab=False, browser_session=browser_session)
+		await execute_registered_action(
+			tools, 'navigate', url=f'{base_url}/pdf-test', new_tab=False, browser_session=browser_session
+		)
 		await asyncio.sleep(0.5)
 
 		with tempfile.TemporaryDirectory() as temp_dir:
 			file_system = FileSystem(temp_dir)
-			result = await tools.save_as_pdf(
+			result = await execute_registered_action(
+				tools,
+				'save_as_pdf',
 				file_name='landscape-test',
 				landscape=True,
 				browser_session=browser_session,
@@ -217,12 +240,16 @@ class TestSaveAsPdf:
 
 	async def test_save_as_pdf_a4_format(self, tools, browser_session, base_url):
 		"""save_as_pdf with paper_format='A4' produces a valid PDF."""
-		await tools.navigate(url=f'{base_url}/pdf-test', new_tab=False, browser_session=browser_session)
+		await execute_registered_action(
+			tools, 'navigate', url=f'{base_url}/pdf-test', new_tab=False, browser_session=browser_session
+		)
 		await asyncio.sleep(0.5)
 
 		with tempfile.TemporaryDirectory() as temp_dir:
 			file_system = FileSystem(temp_dir)
-			result = await tools.save_as_pdf(
+			result = await execute_registered_action(
+				tools,
+				'save_as_pdf',
 				file_name='a4-test',
 				paper_format='A4',
 				browser_session=browser_session,
@@ -235,12 +262,16 @@ class TestSaveAsPdf:
 
 	async def test_save_as_pdf_with_background(self, tools, browser_session, base_url):
 		"""save_as_pdf with print_background=True on a styled page produces a valid PDF."""
-		await tools.navigate(url=f'{base_url}/pdf-styled', new_tab=False, browser_session=browser_session)
+		await execute_registered_action(
+			tools, 'navigate', url=f'{base_url}/pdf-styled', new_tab=False, browser_session=browser_session
+		)
 		await asyncio.sleep(0.5)
 
 		with tempfile.TemporaryDirectory() as temp_dir:
 			file_system = FileSystem(temp_dir)
-			result = await tools.save_as_pdf(
+			result = await execute_registered_action(
+				tools,
+				'save_as_pdf',
 				file_name='styled-with-bg',
 				print_background=True,
 				browser_session=browser_session,
@@ -261,12 +292,14 @@ class TestSaveAsPdf:
 		import pypdf
 
 		page_url = f'{base_url}/pdf-test'
-		await tools.navigate(url=page_url, new_tab=False, browser_session=browser_session)
+		await execute_registered_action(tools, 'navigate', url=page_url, new_tab=False, browser_session=browser_session)
 		await asyncio.sleep(0.5)
 
 		with tempfile.TemporaryDirectory() as temp_dir:
 			file_system = FileSystem(temp_dir)
-			result = await tools.save_as_pdf(
+			result = await execute_registered_action(
+				tools,
+				'save_as_pdf',
 				file_name='with-metadata',
 				browser_session=browser_session,
 				file_system=file_system,
@@ -287,12 +320,14 @@ class TestSaveAsPdf:
 		import pypdf
 
 		page_url = f'{base_url}/pdf-test'
-		await tools.navigate(url=page_url, new_tab=False, browser_session=browser_session)
+		await execute_registered_action(tools, 'navigate', url=page_url, new_tab=False, browser_session=browser_session)
 		await asyncio.sleep(0.5)
 
 		with tempfile.TemporaryDirectory() as temp_dir:
 			file_system = FileSystem(temp_dir)
-			result = await tools.save_as_pdf(
+			result = await execute_registered_action(
+				tools,
+				'save_as_pdf',
 				file_name='no-metadata',
 				display_header_footer=False,
 				browser_session=browser_session,
@@ -313,12 +348,16 @@ class TestSaveAsPdf:
 		"""Custom header/footer templates are honored over the defaults."""
 		import pypdf
 
-		await tools.navigate(url=f'{base_url}/pdf-test', new_tab=False, browser_session=browser_session)
+		await execute_registered_action(
+			tools, 'navigate', url=f'{base_url}/pdf-test', new_tab=False, browser_session=browser_session
+		)
 		await asyncio.sleep(0.5)
 
 		with tempfile.TemporaryDirectory() as temp_dir:
 			file_system = FileSystem(temp_dir)
-			result = await tools.save_as_pdf(
+			result = await execute_registered_action(
+				tools,
+				'save_as_pdf',
 				file_name='custom-templates',
 				header_template='<div style="font-size:12px;">CONFIDENTIAL DRAFT</div>',
 				footer_template='<div style="font-size:12px;"><span class="title"></span></div>',
@@ -339,12 +378,14 @@ class TestSaveAsPdf:
 		# Long, unbroken URL — without min-width:0 + ellipsis on the url span this
 		# overflows the footer and pushes the page count past the page edge.
 		long_url = f'{base_url}/pdf-test?q={"x" * 400}'
-		await tools.navigate(url=long_url, new_tab=False, browser_session=browser_session)
+		await execute_registered_action(tools, 'navigate', url=long_url, new_tab=False, browser_session=browser_session)
 		await asyncio.sleep(0.5)
 
 		with tempfile.TemporaryDirectory() as temp_dir:
 			file_system = FileSystem(temp_dir)
-			result = await tools.save_as_pdf(
+			result = await execute_registered_action(
+				tools,
+				'save_as_pdf',
 				file_name='long-url',
 				# Suppress the header date so the page-number check below is unambiguous.
 				header_template='<span></span>',

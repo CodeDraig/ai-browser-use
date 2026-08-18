@@ -53,17 +53,9 @@ class SearchAction(BaseModel):
 	)
 
 
-# Backward compatibility alias
-SearchGoogleAction = SearchAction
-
-
 class NavigateAction(BaseModel):
 	url: str
 	new_tab: bool = Field(default=False)
-
-
-# Backward compatibility alias
-GoToUrlAction = NavigateAction
 
 
 class ClickElementAction(BaseModel):
