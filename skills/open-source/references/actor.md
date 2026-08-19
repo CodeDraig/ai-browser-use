@@ -1,4 +1,4 @@
-# Actor API (Legacy Direct Browser Control)
+# Actor API (Direct Browser Control)
 
 Low-level Playwright-like browser automation built on CDP. Use for precise, deterministic operations alongside the AI agent.
 

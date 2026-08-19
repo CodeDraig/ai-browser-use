@@ -5,11 +5,12 @@ from browser_use.logging_config import setup_logging
 
 # Only set up logging if not in MCP mode or if explicitly requested
 if os.environ.get('BROWSER_USE_SETUP_LOGGING', 'true').lower() != 'false':
-	from browser_use.config import CONFIG
+	from browser_use.config import get_environment_config
 
 	# Get log file paths from config/environment
-	debug_log_file = getattr(CONFIG, 'BROWSER_USE_DEBUG_LOG_FILE', None)
-	info_log_file = getattr(CONFIG, 'BROWSER_USE_INFO_LOG_FILE', None)
+	_environment_config = get_environment_config()
+	debug_log_file = _environment_config.BROWSER_USE_DEBUG_LOG_FILE
+	info_log_file = _environment_config.BROWSER_USE_INFO_LOG_FILE
 
 	# Set up logging with file handlers if specified
 	logger = setup_logging(debug_log_file=debug_log_file, info_log_file=info_log_file)
@@ -82,7 +83,7 @@ _LAZY_IMPORTS = {
 	'ActionResult': ('browser_use.agent.views', 'ActionResult'),
 	'AgentHistoryList': ('browser_use.agent.views', 'AgentHistoryList'),
 	'BrowserSession': ('browser_use.browser', 'BrowserSession'),
-	'Browser': ('browser_use.browser', 'BrowserSession'),  # Alias for BrowserSession
+	'Browser': ('browser_use.browser', 'BrowserSession'),  # Preferred package-root browser name
 	'BrowserProfile': ('browser_use.browser', 'BrowserProfile'),
 	# Tools (moderate weight)
 	'Tools': ('browser_use.tools.service', 'Tools'),
@@ -137,7 +138,7 @@ def __getattr__(name: str):
 __all__ = [
 	'Agent',
 	'BrowserSession',
-	'Browser',  # Alias for BrowserSession
+	'Browser',
 	'BrowserProfile',
 	'DomService',
 	'SystemPrompt',

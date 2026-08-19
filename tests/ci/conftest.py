@@ -42,8 +42,7 @@ def setup_test_environment():
 		'SKIP_LLM_API_KEY_VERIFICATION': 'true',
 		'BROWSER_USE_CLOUD_API_URL': 'http://placeholder-will-be-replaced-by-specific-test-fixtures',
 		'BROWSER_USE_CLOUD_UI_URL': 'http://placeholder-will-be-replaced-by-specific-test-fixtures',
-		# Don't set BROWSER_USE_CONFIG_DIR anymore - let it use the default ~/.config/browseruse
-		# This way extensions will be cached in ~/.config/browseruse/extensions
+		# Let the current configuration use the default ~/.config/browseruse location.
 	}
 
 	for key, value in test_env_vars.items():
@@ -83,7 +82,6 @@ def create_mock_llm(actions: list[str] | None = None) -> BaseChatModel:
 	# Add missing properties from BaseChatModel protocol
 	llm.provider = 'mock'
 	llm.name = 'mock-llm'
-	llm.model_name = 'mock-llm'  # Ensure this returns a string, not a mock
 
 	# Default done action
 	default_done_action = """

@@ -112,7 +112,7 @@ class TestHeavyPageNavigation:
 		agent = Agent(
 			task=f'Navigate to {url}',
 			llm=create_mock_llm(actions=_nav_actions(url)),
-			browser_session=browser_session,
+			browser=browser_session,
 		)
 		start = time.time()
 		history = await asyncio.wait_for(agent.run(max_steps=3), timeout=60)
@@ -126,7 +126,7 @@ class TestHeavyPageNavigation:
 		agent = Agent(
 			task=f'Navigate to {url}',
 			llm=create_mock_llm(actions=_nav_actions(url)),
-			browser_session=browser_session,
+			browser=browser_session,
 		)
 		history = await asyncio.wait_for(agent.run(max_steps=3), timeout=60)
 		assert len(history) > 0
@@ -175,7 +175,7 @@ class TestHeavyPageNavigation:
 		agent = Agent(
 			task='Navigate to slow then quick page',
 			llm=create_mock_llm(actions=actions),
-			browser_session=browser_session,
+			browser=browser_session,
 		)
 		history = await asyncio.wait_for(agent.run(max_steps=4), timeout=90)
 		assert len(history) >= 2

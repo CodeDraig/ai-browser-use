@@ -8,8 +8,7 @@ from browser_use.agent.views import ActionResult, AgentOutput, AgentStepInfo, Me
 from browser_use.browser.views import BrowserStateSummary
 from browser_use.dom.views import SerializedDOMState
 from browser_use.filesystem.file_system import FileSystem
-from browser_use.llm import SystemMessage, UserMessage
-from browser_use.llm.messages import ContentPartTextParam
+from browser_use.llm.messages import ContentPartTextParam, SystemMessage, UserMessage
 from browser_use.security import is_new_tab_page, match_url_with_domain_pattern
 from browser_use.tools.registry.service import Registry
 
@@ -568,7 +567,7 @@ def test_password_field_value_excluded_even_from_html_attributes():
 
 
 def test_text_input_value_preserved():
-	"""Non-password input values should still be included (backward compatibility)."""
+	"""Non-password input values should still be included."""
 	from browser_use.dom.serializer.serializer import DOMTreeSerializer
 	from browser_use.dom.views import DEFAULT_INCLUDE_ATTRIBUTES
 

@@ -20,7 +20,7 @@ from browser_use.browser.profile import (
 	BrowserProfile,
 )
 from browser_use.browser.session import BrowserSession
-from browser_use.config import CONFIG
+from browser_use.config import get_environment_config
 
 # Set up test logging
 logger = logging.getLogger('browser_session_start_tests')
@@ -101,7 +101,7 @@ class TestBrowserSessionStart:
 		session = BrowserSession(
 			browser_profile=BrowserProfile(
 				headless=True,
-				user_data_dir=CONFIG.BROWSER_USE_DEFAULT_USER_DATA_DIR,
+				user_data_dir=get_environment_config().default_user_data_dir,
 				channel=BROWSERUSE_DEFAULT_CHANNEL,  # chromium
 				keep_alive=False,
 			),
@@ -111,33 +111,33 @@ class TestBrowserSessionStart:
 			await session.start()
 			assert session._cdp_client_root is not None
 			# Verify the user_data_dir wasn't changed
-			assert session.browser_profile.user_data_dir == CONFIG.BROWSER_USE_DEFAULT_USER_DATA_DIR
+			assert session.browser_profile.user_data_dir == get_environment_config().default_user_data_dir
 		finally:
 			await session.kill()
 
 		# Test 2: Chrome with default user_data_dir should change dir AND copy to temp
 		profile2 = BrowserProfile(
 			headless=True,
-			user_data_dir=CONFIG.BROWSER_USE_DEFAULT_USER_DATA_DIR,
+			user_data_dir=get_environment_config().default_user_data_dir,
 			channel=BrowserChannel.CHROME,
 			keep_alive=False,
 		)
 
 		# The validator should have changed the user_data_dir to avoid corruption
 		# And then _copy_profile copies it to a temp directory (Chrome only)
-		assert profile2.user_data_dir != CONFIG.BROWSER_USE_DEFAULT_USER_DATA_DIR
+		assert profile2.user_data_dir != get_environment_config().default_user_data_dir
 		assert 'browser-use-user-data-dir-' in str(profile2.user_data_dir)
 
 		# Test 3: Edge with default user_data_dir should also change
 		profile3 = BrowserProfile(
 			headless=True,
-			user_data_dir=CONFIG.BROWSER_USE_DEFAULT_USER_DATA_DIR,
+			user_data_dir=get_environment_config().default_user_data_dir,
 			channel=BrowserChannel.MSEDGE,
 			keep_alive=False,
 		)
 
-		assert profile3.user_data_dir != CONFIG.BROWSER_USE_DEFAULT_USER_DATA_DIR
-		assert profile3.user_data_dir == CONFIG.BROWSER_USE_DEFAULT_USER_DATA_DIR.parent / 'default-msedge'
+		assert profile3.user_data_dir != get_environment_config().default_user_data_dir
+		assert profile3.user_data_dir == get_environment_config().default_user_data_dir.parent / 'default-msedge'
 		assert 'browser-use-user-data-dir-' not in str(profile3.user_data_dir)
 
 
@@ -202,7 +202,7 @@ class TestBrowserSessionReusePatterns:
 			agent1 = Agent(
 				task='The first task...',
 				llm=mock_llm,
-				browser_session=reused_session,
+				browser=reused_session,
 				# Disable memory for tests
 			)
 			await agent1.run()
@@ -214,7 +214,7 @@ class TestBrowserSessionReusePatterns:
 			agent2 = Agent(
 				task='The second task...',
 				llm=mock_llm,
-				browser_session=reused_session,
+				browser=reused_session,
 				# Disable memory for tests
 			)
 			await agent2.run()

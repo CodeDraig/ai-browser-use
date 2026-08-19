@@ -100,7 +100,7 @@ class BrowserStateSummary:
 	screenshot: str | None = field(default=None, repr=False)
 	page_info: PageInfo | None = None  # Enhanced page information
 
-	# Keep legacy fields for backward compatibility
+	# Model-visible state collected by the browser watchdogs
 	pixels_above: int = 0
 	pixels_below: int = 0
 	browser_errors: list[str] = field(default_factory=list)

@@ -38,7 +38,7 @@ def _make_agent(browser_session, mock_llm, **kwargs):
 	"""Create an Agent with defaults suitable for unit tests."""
 	from browser_use import Agent
 
-	return Agent(task='Test task', llm=mock_llm, browser_session=browser_session, **kwargs)
+	return Agent(task='Test task', llm=mock_llm, browser=browser_session, **kwargs)
 
 
 # ---------------------------------------------------------------------------

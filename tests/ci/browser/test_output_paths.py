@@ -157,7 +157,7 @@ class TestAgentRecordings:
 			agent = Agent(
 				task=f'go to {httpserver_url} and type "test" in the search box',
 				llm=llm,
-				browser_session=browser_session,
+				browser=browser_session,
 				save_conversation_path=str(conversation_path),
 			)
 			history: AgentHistoryList = await agent.run(max_steps=2)
@@ -194,7 +194,7 @@ class TestAgentRecordings:
 			agent = Agent(
 				task=f'go to {httpserver_url}',
 				llm=llm,
-				browser_session=browser_session,
+				browser=browser_session,
 				generate_gif=gif_param,
 			)
 			history: AgentHistoryList = await agent.run(max_steps=2)

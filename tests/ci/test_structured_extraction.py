@@ -321,7 +321,6 @@ def _make_extraction_llm(structured_response: dict | None = None, freetext_respo
 	llm._verified_api_keys = True
 	llm.provider = 'mock'
 	llm.name = 'mock-extraction-llm'
-	llm.model_name = 'mock-extraction-llm'
 
 	async def mock_ainvoke(messages, output_format=None, **kwargs):
 		if output_format is not None and structured_response is not None:
@@ -676,7 +675,7 @@ class TestOutputModelSchemaDoesNotAutoBridge:
 		agent = Agent(
 			task='Test task',
 			llm=mock_llm,
-			browser_session=browser_session,
+			browser=browser_session,
 			output_model_schema=FinalResult,
 		)
 		assert agent.extraction_schema is None
@@ -690,7 +689,7 @@ class TestOutputModelSchemaDoesNotAutoBridge:
 		agent = Agent(
 			task='Test task',
 			llm=mock_llm,
-			browser_session=browser_session,
+			browser=browser_session,
 			output_model_schema=FinalResult,
 			extraction_schema=PRODUCT_SCHEMA,
 		)

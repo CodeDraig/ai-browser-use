@@ -174,7 +174,7 @@ async def test_fresh_state_after_timeout_repopulates_selector_map(httpserver, br
 	continue_index = next(index for index, node in recovered_nodes.items() if node.attributes.get('id') == 'continue')
 
 	assert recovered_state.state_error is None
-	assert await browser_session.get_element_by_index(continue_index) is recovered_nodes[continue_index]
+	assert await browser_session.get_dom_element_by_index(continue_index) is recovered_nodes[continue_index]
 
 
 async def test_initial_state_timeout_still_returns_model_visible_state(browser_session: BrowserSession, monkeypatch):
@@ -217,7 +217,7 @@ async def test_agent_still_calls_model_after_state_timeout(browser_session: Brow
 		return await original_ainvoke(*args, **kwargs)
 
 	monkeypatch.setattr(mock_llm, 'ainvoke', counted_ainvoke)
-	agent = Agent(task='Finish after inspecting the available state.', llm=mock_llm, browser_session=browser_session)
+	agent = Agent(task='Finish after inspecting the available state.', llm=mock_llm, browser=browser_session)
 
 	history = await agent.run(max_steps=1)
 

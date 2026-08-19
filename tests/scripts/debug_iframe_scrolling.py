@@ -123,7 +123,7 @@ async def debug_iframe_scrolling():
 		agent = Agent(
 			task='Navigate to the iframe test page and scroll inside the iframe',
 			llm=mock_llm,
-			browser_session=browser_session,
+			browser=browser_session,
 		)
 
 		# Helper function to capture and analyze DOM state
@@ -193,7 +193,7 @@ async def debug_iframe_scrolling():
 		agent = Agent(
 			task='Input text and scroll inside the iframe',
 			llm=mock_llm_remaining,
-			browser_session=browser_session,
+			browser=browser_session,
 		)
 
 		# Hook into agent actions to capture state after each one

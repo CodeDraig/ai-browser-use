@@ -29,7 +29,7 @@ async def main():
 
 	await asyncio.sleep(1)
 
-	agent = Agent(task='Find the cheapest flight from London to Paris on 2025-10-15', llm=llm, browser_session=browser)
+	agent = Agent(task='Find the cheapest flight from London to Paris on 2025-10-15', llm=llm, browser=browser)
 	await agent.run()
 
 	input('Press Enter to continue...')

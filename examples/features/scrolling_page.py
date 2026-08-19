@@ -48,7 +48,7 @@ browser_session = BrowserSession(browser_profile=browser_profile)
 agent1 = Agent(
 	task="Navigate to 'https://en.wikipedia.org/wiki/Internet' and scroll down by one page - then scroll up by 0.5 pages - then scroll down by 0.25 pages - then scroll down by 2 pages.",
 	llm=llm,
-	browser_session=browser_session,
+	browser=browser_session,
 )
 
 # Example 2: Element-specific scrolling (dropdowns and containers)
@@ -59,14 +59,14 @@ agent2 = Agent(
 	3. Click on the State dropdown and scroll down 1 page INSIDE the dropdown to see more states
 	4. The dropdown should stay open while scrolling inside it""",
 	llm=llm,
-	browser_session=browser_session,
+	browser=browser_session,
 )
 
 # Example 3: Text-based scrolling alternative
 agent3 = Agent(
 	task="Navigate to 'https://en.wikipedia.org/wiki/Internet' and scroll to the text 'The vast majority of computer'",
 	llm=llm,
-	browser_session=browser_session,
+	browser=browser_session,
 )
 
 

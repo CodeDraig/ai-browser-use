@@ -67,7 +67,7 @@ def register_input_actions(tools: 'Tools') -> None:
 		sensitive_data: SensitiveData | None = None,
 	):
 		# Look up the node from the selector map
-		node = await browser_session.get_element_by_index(params.index)
+		node = await browser_session.get_dom_element_by_index(params.index)
 		if node is None:
 			msg = f'Element index {params.index} not available - page may have changed. Try refreshing browser state.'
 			logger.warning(f'⚠️ {msg}')

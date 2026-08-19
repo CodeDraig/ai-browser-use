@@ -12,7 +12,7 @@ async def main():
 
 	await browser.start()
 
-	agent = Agent(task='search for browser-use.', browser_session=browser)
+	agent = Agent(task='search for browser-use.', browser=browser)
 	await agent.run(max_steps=2)
 	agent.add_new_task('return the title of first result')
 	await agent.run()

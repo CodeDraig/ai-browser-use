@@ -37,11 +37,7 @@ TARGET_NAMES = tuple(TARGET_DIR_BUILDERS)
 
 
 def _all_target_skill_paths() -> list[Path]:
-	paths = [build_dir() / 'SKILL.md' for build_dir in TARGET_DIR_BUILDERS.values()]
-	legacy_opencode = Path.home() / '.config' / 'opencode' / 'skills' / SKILL_NAME / 'SKILL.md'
-	if legacy_opencode not in paths:
-		paths.append(legacy_opencode)
-	return paths
+	return [build_dir() / 'SKILL.md' for build_dir in TARGET_DIR_BUILDERS.values()]
 
 
 def _load_skill_text_from_package() -> str:
@@ -108,11 +104,6 @@ def _build_parser() -> argparse.ArgumentParser:
 		'--path',
 		type=Path,
 		help='Custom output directory or SKILL.md path',
-	)
-	install.add_argument(
-		'--force',
-		action='store_true',
-		help='Accepted for compatibility; install overwrites existing SKILL.md files by default',
 	)
 	install.add_argument(
 		'--no-install',

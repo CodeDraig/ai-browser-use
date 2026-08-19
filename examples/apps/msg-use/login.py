@@ -52,7 +52,7 @@ async def login_to_whatsapp():
 			storage_state=str(STORAGE_STATE_FILE) if STORAGE_STATE_FILE.exists() else None,  # Use saved cookies/session
 		)
 
-		agent = Agent(task=task, llm=llm, browser_session=browser_session)
+		agent = Agent(task=task, llm=llm, browser=browser_session)
 
 		result = await agent.run()
 

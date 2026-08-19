@@ -128,7 +128,7 @@ async def structured_output_example():
 		task="""Go to github.com, search for 'browser automation python', 
                 find the most popular repository, and return structured information about it""",
 		llm=llm,
-		output_format=SearchSummary,  # This will enforce structured output
+		output_model_schema=SearchSummary,  # This will enforce structured output
 	)
 
 	print('Task: Search GitHub for browser automation and return structured data')

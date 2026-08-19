@@ -13,7 +13,7 @@ import httpx
 from pydantic import BaseModel
 from uuid_extensions import uuid7str
 
-from browser_use.config import CONFIG
+from browser_use.config import get_environment_config
 
 # Temporary user ID for pre-auth events (matches cloud backend)
 TEMP_USER_ID = '99999999-9999-9999-9999-999999999999'
@@ -21,7 +21,7 @@ TEMP_USER_ID = '99999999-9999-9999-9999-999999999999'
 
 def get_or_create_device_id() -> str:
 	"""Get or create a persistent device ID for this installation."""
-	device_id_path = CONFIG.BROWSER_USE_CONFIG_DIR / 'device_id'
+	device_id_path = get_environment_config().config_dir / 'device_id'
 
 	# Try to read existing device ID
 	if device_id_path.exists():
@@ -37,7 +37,7 @@ def get_or_create_device_id() -> str:
 	device_id = uuid7str()
 
 	# Ensure config directory exists
-	CONFIG.BROWSER_USE_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+	get_environment_config().config_dir.mkdir(parents=True, exist_ok=True)
 
 	# Write device ID to file
 	device_id_path.write_text(device_id)
@@ -56,7 +56,7 @@ class CloudAuthConfig(BaseModel):
 	def load_from_file(cls) -> 'CloudAuthConfig':
 		"""Load auth config from local file"""
 
-		config_path = CONFIG.BROWSER_USE_CONFIG_DIR / 'cloud_auth.json'
+		config_path = get_environment_config().config_dir / 'cloud_auth.json'
 		if config_path.exists():
 			try:
 				with open(config_path) as f:
@@ -70,9 +70,9 @@ class CloudAuthConfig(BaseModel):
 	def save_to_file(self) -> None:
 		"""Save auth config to local file"""
 
-		CONFIG.BROWSER_USE_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+		get_environment_config().config_dir.mkdir(parents=True, exist_ok=True)
 
-		config_path = CONFIG.BROWSER_USE_CONFIG_DIR / 'cloud_auth.json'
+		config_path = get_environment_config().config_dir / 'cloud_auth.json'
 		with open(config_path, 'w') as f:
 			json.dump(self.model_dump(mode='json'), f, indent=2, default=str)
 
@@ -89,7 +89,7 @@ class DeviceAuthClient:
 
 	def __init__(self, base_url: str | None = None, http_client: httpx.AsyncClient | None = None):
 		# Backend API URL for OAuth requests - can be passed directly or defaults to env var
-		self.base_url = base_url or CONFIG.BROWSER_USE_CLOUD_API_URL
+		self.base_url = base_url or get_environment_config().BROWSER_USE_CLOUD_API_URL
 		self.client_id = 'library'
 		self.scope = 'read write'
 
@@ -290,7 +290,7 @@ class DeviceAuthClient:
 			device_auth = await self.start_device_authorization(agent_session_id)
 
 			# Use frontend URL for user-facing links
-			frontend_url = CONFIG.BROWSER_USE_CLOUD_UI_URL or self.base_url.replace('//api.', '//cloud.')
+			frontend_url = get_environment_config().BROWSER_USE_CLOUD_UI_URL or self.base_url.replace('//api.', '//cloud.')
 
 			# Replace backend URL with frontend URL in verification URIs
 			verification_uri = device_auth['verification_uri'].replace(self.base_url, frontend_url)
@@ -336,7 +336,7 @@ class DeviceAuthClient:
 			logger.warning(f'❌ Unexpected error during cloud authentication: {type(e).__name__}: {e}')
 
 		if show_instructions:
-			logger.debug(f'❌ Authentication failed or timed out with {CONFIG.BROWSER_USE_CLOUD_API_URL}')
+			logger.debug(f'❌ Authentication failed or timed out with {get_environment_config().BROWSER_USE_CLOUD_API_URL}')
 
 		return False
 
@@ -351,5 +351,5 @@ class DeviceAuthClient:
 		self.auth_config = CloudAuthConfig()
 
 		# Remove the config file entirely instead of saving empty values
-		config_path = CONFIG.BROWSER_USE_CONFIG_DIR / 'cloud_auth.json'
+		config_path = get_environment_config().config_dir / 'cloud_auth.json'
 		config_path.unlink(missing_ok=True)

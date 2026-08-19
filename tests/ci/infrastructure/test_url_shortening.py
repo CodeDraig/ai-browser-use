@@ -25,7 +25,7 @@ def agent():
 	"""Create an agent instance for testing URL shortening functionality."""
 	from tests.ci.conftest import create_mock_llm
 
-	return Agent(task='Test URL shortening', llm=create_mock_llm(), url_shortening_limit=25)
+	return Agent(task='Test URL shortening', llm=create_mock_llm(), _url_shortening_limit=25)
 
 
 class TestUrlShorteningInputProcessing:

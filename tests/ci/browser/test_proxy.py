@@ -5,13 +5,13 @@ import pytest
 
 from browser_use.browser import BrowserProfile, BrowserSession
 from browser_use.browser.profile import ProxySettings
-from browser_use.config import CONFIG
+from browser_use.config import get_environment_config
 
 
 def test_chromium_args_include_proxy_flags():
 	profile = BrowserProfile(
 		headless=True,
-		user_data_dir=str(CONFIG.BROWSER_USE_PROFILES_DIR / 'proxy-smoke'),
+		user_data_dir=str(get_environment_config().profiles_dir / 'proxy-smoke'),
 		proxy=ProxySettings(
 			server='http://proxy.local:8080',
 			bypass='localhost,127.0.0.1',
@@ -27,7 +27,7 @@ async def test_cdp_proxy_auth_handler_registers_and_responds():
 	# Create profile with proxy auth credentials
 	profile = BrowserProfile(
 		headless=True,
-		user_data_dir=str(CONFIG.BROWSER_USE_PROFILES_DIR / 'proxy-smoke'),
+		user_data_dir=str(get_environment_config().profiles_dir / 'proxy-smoke'),
 		proxy=ProxySettings(username='user', password='pass'),
 	)
 	session = BrowserSession(browser_profile=profile)

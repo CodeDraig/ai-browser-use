@@ -154,42 +154,6 @@ def _run_browser_harness() -> int | None:
 	return None
 
 
-# Subcommands and flags from the pre-3.0 CLI; maps to hint
-_LEGACY_HINTS: dict[str, str] = {
-	'open': 'new_tab("https://example.com")',
-	'state': 'print(page_info())',
-	'screenshot': 'print(capture_screenshot())',
-	'eval': 'print(js("document.title"))',
-	'cookies': 'print(cdp("Network.getCookies"))',
-	'python': '# the CLI runs Python directly now — pipe it on stdin as shown below',
-	'run': '# write the steps as Python using the pre-imported helpers shown below',
-	'connect': '# connecting is automatic — the default flow attaches to your running Chrome',
-	'close': '# restart the local daemon with `browser-use --reload`; stop cloud browsers with stop_remote_daemon(name)',
-	'sessions': '# named local sessions were removed — one default daemon; use BU_NAME=<name> for cloud daemons',
-	'profile': '# profiles now come from your real Chrome; see the profile-sync interaction skill',
-	'cloud': '# authenticate with `browser-use auth login`, then start_remote_daemon("<name>")',
-	'daemon': '# the daemon starts automatically on every call; restart it with `browser-use --reload`',
-	'record': '# session recording was removed; use capture_screenshot() per step',
-	'mcp': '# MCP server mode is now the --mcp flag: `browser-use --mcp`',
-	'--session': '# use BU_NAME=<name> as an env var for named cloud daemons; local runs use one default daemon',
-	'--headed': '# local control always attaches to your real, visible Chrome — no flag needed',
-	'--cdp-url': '# use the BU_CDP_URL=<url> env var instead of a flag',
-	'--profile': '# use your real Chrome profile; for cloud cookie sync see the profile-sync interaction skill',
-	'--json': '# output is whatever your Python prints — use print(json.dumps(...))',
-	'-c': "# pipe code on stdin instead: echo 'print(page_info())' | browser-use",
-	'--code': "# pipe code on stdin instead: echo 'print(page_info())' | browser-use",
-}
-
-
-def _legacy_command(args: list[str]) -> str | None:
-	if not args:
-		return None
-	first = args[0].split('=', 1)[0]
-	if first in _LEGACY_HINTS:
-		return first
-	return None
-
-
 _CLI3_GUIDE = """Core helpers: new_tab(url), goto_url(url), page_info(), capture_screenshot(),
   click_at_xy(x, y), type_text(text), fill_input(selector, text), press_key(key),
   scroll(x, y), js(code), cdp(method, ...), wait_for_load(), wait_for_element(selector),
@@ -201,24 +165,6 @@ Install the CLI 3.0 skill (upgrades the CLI and replaces any pre-existing browse
 Then load the freshly installed browser-use skill, and follow it to use the latest CLI.
 Skill reference:               https://github.com/browser-use/browser-use/blob/main/browser_use/skills/browser-use/SKILL.md
 Health check:                  browser-use --doctor"""
-
-
-def _legacy_migration_message(command: str) -> str:
-	hint = _LEGACY_HINTS[command]
-	if hint.startswith('#'):
-		replacement = f'  {hint.lstrip("# ")}\n\nExample:\n  browser-use <<\'PY\'\n  new_tab("https://example.com")\n  print(page_info())\n  PY'
-	else:
-		replacement = f"  browser-use <<'PY'\n  {hint}\n  PY"
-	return f"""The browser-use CLI changed in 3.0, and '{command}' was removed.
-
-The old preset subcommands are gone. To use the CLI, you write raw Python and
-pipe it on stdin, and it runs in a persistent browser session. Browser management
-(daemon startup, Chrome/CDP attach, tabs, waiting) is handled for you.
-
-Replacement for '{command}':
-{replacement}
-
-{_CLI3_GUIDE}"""
 
 
 def _unknown_helper_message(name: str) -> str:
@@ -304,11 +250,6 @@ def _dispatch(args: list[str]) -> tuple[int | None, str]:
 		from browser_use.skills.install import handle as handle_skill_command
 
 		return handle_skill_command(args[1:]), 'skill'
-	legacy = _legacy_command(args)
-	if legacy is not None:
-		print(_legacy_migration_message(legacy), file=sys.stderr)
-		return 2, f'legacy:{legacy}'
-
 	if not args:
 		if sys.stdin.isatty():
 			print(_QUICKSTART)
@@ -330,11 +271,6 @@ def _dispatch(args: list[str]) -> tuple[int | None, str]:
 		traceback.print_exc()
 		print(_unknown_helper_message(name), file=sys.stderr)
 		return 2, args[0] if args else 'run'
-
-
-def browser_use_tui_main() -> int | None:
-	print('browser-use-tui is deprecated; use browser-use instead.', file=sys.stderr)
-	return main()
 
 
 def main() -> int | None:

@@ -110,7 +110,7 @@ async def run_single_task(task_file):
 			)
 
 		print('[DEBUG] Starting agent execution...', file=sys.stderr)
-		agent = Agent(task=task, llm=agent_llm, browser_session=session)
+		agent = Agent(task=task, llm=agent_llm, browser=session)
 
 		try:
 			history: AgentHistoryList = await agent.run(max_steps=max_steps)

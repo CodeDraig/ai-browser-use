@@ -31,7 +31,7 @@ async def main():
 		agent = Agent(
 			task="go to google.com and type 'OpenAI' click search and give me the first url",
 			llm=llm,
-			browser_session=browser_session,
+			browser=browser_session,
 		)
 		history: AgentHistoryList = await agent.run(max_steps=3)
 
@@ -42,11 +42,11 @@ async def main():
 		pprint(history.errors(), indent=4)
 
 		# e.g. xPaths the model clicked on
-		print('\nModel Outputs:')
+		print('\nModel Actions:')
 		pprint(history.model_actions(), indent=4)
 
-		print('\nThoughts:')
-		pprint(history.model_thoughts(), indent=4)
+		print('\nModel Outputs:')
+		pprint(history.model_outputs(), indent=4)
 	finally:
 		await browser_session.stop()
 

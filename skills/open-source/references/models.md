@@ -110,7 +110,7 @@ llm = ChatGoogle(model="gemini-3-pro-preview")
 
 Supports Vertex AI via `ChatGoogle(model="...", vertexai=True)`.
 
-Note: `GEMINI_API_KEY` is deprecated, use `GOOGLE_API_KEY`.
+Use `GOOGLE_API_KEY` for Google Gemini models.
 
 ## Azure OpenAI
 

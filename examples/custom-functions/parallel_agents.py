@@ -187,7 +187,7 @@ async def run_single_agent(task: str, llm, agent_id: int) -> tuple[int, str]:
 			print(f'   ⚠️ Could not check initial tabs for agent {agent_id}: {e}')
 
 		# Create agent with the dedicated browser session and disable auto URL detection
-		agent = Agent(task=task, llm=llm, browser_session=browser_session, preload=False)
+		agent = Agent(task=task, llm=llm, browser=browser_session)
 
 		# Run the agent with timeout to prevent hanging
 		try:

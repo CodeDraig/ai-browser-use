@@ -1,8 +1,4 @@
-"""
-We have switched all of our code from langchain to openai.types.chat.chat_completion_message_param.
-
-For easier transition we have
-"""
+"""Protocols shared by the language-model integrations."""
 
 from typing import Any, Protocol, TypeVar, overload, runtime_checkable
 
@@ -25,11 +21,6 @@ class BaseChatModel(Protocol):
 
 	@property
 	def name(self) -> str: ...
-
-	@property
-	def model_name(self) -> str:
-		# for legacy support
-		return self.model
 
 	@overload
 	async def ainvoke(

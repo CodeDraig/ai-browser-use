@@ -46,7 +46,7 @@ def _fake_browser_harness_tools(tmp_path: Path, skill_text: str) -> Path:
 	return bin_dir
 
 
-def test_docs_install_browser_use_skill_from_package_alias():
+def test_docs_install_browser_use_skill_from_package():
 	readme = (ROOT / 'README.md').read_text(encoding='utf-8')
 
 	assert 'run `browser-use skill install` to register the skill' in readme
@@ -68,6 +68,7 @@ def test_browser_use_cli_installs_browser_harness_package_skill(tmp_path):
 	uv_args = tmp_path / 'uv-args.txt'
 	env = os.environ.copy()
 	env['HOME'] = str(home)
+	env['XDG_CONFIG_HOME'] = str(home / '.config')
 	env['PATH'] = os.pathsep.join(part for part in (str(bin_dir), env.get('PATH', '')) if part)
 	env['PYTHONPATH'] = os.pathsep.join(part for part in (str(ROOT), env.get('PYTHONPATH', '')) if part)
 	env['UV_TOOL_INSTALL_ARGS_FILE'] = str(uv_args)

@@ -18,7 +18,7 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
-from browser_use.config import CONFIG
+from browser_use.config import get_environment_config
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +52,7 @@ class GmailService:
 		"""
 		# Set up configuration directory using browser-use's config system
 		if config_dir is None:
-			self.config_dir = CONFIG.BROWSER_USE_CONFIG_DIR
+			self.config_dir = get_environment_config().config_dir
 		else:
 			self.config_dir = Path(config_dir).expanduser().resolve()
 

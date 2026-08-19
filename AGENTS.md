@@ -361,7 +361,6 @@ history.final_result()            # Get the final extracted content (last step)
 history.is_done()                 # Check if agent completed successfully
 history.is_successful()           # Check if agent completed successfully (returns None if not done)
 history.has_errors()              # Check if any errors occurred
-history.model_thoughts()          # Get the agent's reasoning process (AgentBrain objects)
 history.action_results()          # Get all ActionResult objects from history
 history.action_history()          # Get truncated action history with essential fields
 history.number_of_steps()         # Get the number of steps in the history
@@ -400,7 +399,6 @@ history.final_result()            # Get the final extracted content (last step)
 history.is_done()                 # Check if agent completed successfully
 history.is_successful()           # Check if agent completed successfully (returns None if not done)
 history.has_errors()              # Check if any errors occurred
-history.model_thoughts()          # Get the agent's reasoning process (AgentBrain objects)
 history.action_results()          # Get all ActionResult objects from history
 history.action_history()          # Get truncated action history with essential fields
 history.number_of_steps()         # Get the number of steps in the history

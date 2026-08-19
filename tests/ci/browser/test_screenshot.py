@@ -128,7 +128,7 @@ async def test_agent_screenshot_with_vision_enabled(browser_session, base_url):
 	agent = Agent(
 		task=f'Navigate to {base_url}/screenshot-page',
 		llm=mock_llm,
-		browser_session=browser_session,
+		browser=browser_session,
 		use_vision=True,  # Enable vision/screenshots
 	)
 

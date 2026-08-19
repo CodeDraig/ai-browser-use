@@ -6,7 +6,7 @@ import os
 
 from cdp_use.cdp.input.commands import DispatchKeyEventParameters
 
-from browser_use.actor.utils import get_key_info
+from browser_use.actor.utils import Utils
 from browser_use.browser.events import (
 	ClickCoordinateEvent,
 	ClickElementEvent,
@@ -2457,7 +2457,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 	async def _dispatch_key_event(self, cdp_session, event_type: str, key: str, modifiers: int = 0) -> None:
 		"""Helper to dispatch a keyboard event with proper key codes."""
-		code, vk_code = get_key_info(key)
+		code, vk_code = Utils.get_key_info(key)
 		params: DispatchKeyEventParameters = {
 			'type': event_type,
 			'key': key,

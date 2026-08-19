@@ -67,9 +67,6 @@ class CreateBrowserRequest(BaseModel):
 	)
 
 
-CloudBrowserParams = CreateBrowserRequest  # alias for easier readability
-
-
 # Responses
 class CloudBrowserResponse(BaseModel):
 	"""Response from cloud browser API."""

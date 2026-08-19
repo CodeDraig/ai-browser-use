@@ -98,18 +98,6 @@ class ChatOCIRaw(BaseChatModel):
 	def model(self) -> str:
 		return self.model_id
 
-	@property
-	def model_name(self) -> str:
-		# Return a shorter display name (max 100 chars)
-		if len(self.model_id) > 90:
-			# Extract the model name from the OCID
-			parts = self.model_id.split('.')
-			if len(parts) >= 4:
-				return f'oci-{self.provider}-{parts[3]}'  # e.g., "oci-meta-us-chicago-1"
-			else:
-				return f'oci-{self.provider}-model'
-		return self.model_id
-
 	def _uses_cohere_format(self) -> bool:
 		"""Check if the provider uses Cohere chat request format."""
 		return self.provider.lower() == 'cohere'

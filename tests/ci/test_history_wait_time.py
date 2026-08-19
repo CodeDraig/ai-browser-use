@@ -1,4 +1,9 @@
-from browser_use.agent.views import StepMetadata
+import pytest
+from pydantic import ValidationError
+
+from browser_use.agent.views import ActionResult, AgentHistory, AgentHistoryList, AgentOutput, StepMetadata
+from browser_use.browser.views import BrowserStateHistory
+from browser_use.tools.service import Tools
 
 
 def test_step_metadata_has_step_interval_field():
@@ -9,15 +14,19 @@ def test_step_metadata_has_step_interval_field():
 	assert metadata.step_interval == 2.5
 
 
-def test_step_metadata_step_interval_optional():
-	"""Test that step_interval is optional (None for first step)"""
-	# Explicitly None
+def test_step_metadata_step_interval_nullable_but_required():
+	"""The first step may have no interval, but the serialized field is required."""
 	metadata_none = StepMetadata(step_number=0, step_start_time=0.0, step_end_time=1.0, step_interval=None)
 	assert metadata_none.step_interval is None
 
-	# Omitted (defaults to None)
-	metadata_default = StepMetadata(step_number=0, step_start_time=0.0, step_end_time=1.0)
-	assert metadata_default.step_interval is None
+	from pydantic import ValidationError
+
+	try:
+		StepMetadata(step_number=0, step_start_time=0.0, step_end_time=1.0)  # type: ignore[call-arg]
+	except ValidationError:
+		pass
+	else:
+		raise AssertionError('step_interval must be supplied, including for the first step')
 
 
 def test_step_interval_calculation():
@@ -61,7 +70,7 @@ def test_step_metadata_deserialization_with_step_interval():
 	metadata = StepMetadata.model_validate(data_with_wait)
 	assert metadata.step_interval == 2.5
 
-	# Load without step_interval (old format)
+	# Missing step_interval is no longer a current-format history.
 	data_without_wait = {
 		'step_number': 0,
 		'step_start_time': 0.0,
@@ -69,27 +78,14 @@ def test_step_metadata_deserialization_with_step_interval():
 		# step_interval is missing
 	}
 
-	metadata = StepMetadata.model_validate(data_without_wait)
-	assert metadata.step_interval is None  # Defaults to None
+	from pydantic import ValidationError
 
-
-def test_step_interval_backwards_compatibility():
-	"""Test that old metadata without step_interval still works"""
-	# Simulate old format from JSON
-	old_metadata_dict = {
-		'step_number': 0,
-		'step_start_time': 1000.0,
-		'step_end_time': 1002.5,
-		# step_interval field doesn't exist (old format)
-	}
-
-	# Should load successfully with step_interval defaulting to None
-	metadata = StepMetadata.model_validate(old_metadata_dict)
-
-	assert metadata.step_number == 0
-	assert metadata.step_start_time == 1000.0
-	assert metadata.step_end_time == 1002.5
-	assert metadata.step_interval is None  # Default value
+	try:
+		StepMetadata.model_validate(data_without_wait)
+	except ValidationError:
+		pass
+	else:
+		raise AssertionError('step_interval must be present in serialized metadata')
 
 
 def test_duration_seconds_property_still_works():
@@ -117,3 +113,61 @@ def test_step_metadata_json_round_trip():
 	assert loaded.step_number == 1
 	assert loaded.step_start_time == 100.0
 	assert loaded.step_end_time == 102.5
+
+
+def _current_history_data() -> tuple[dict, type[AgentOutput]]:
+	tools = Tools()
+	action_model = tools.registry.create_action_model()
+	output_model = AgentOutput.type_with_custom_actions(action_model)
+	item = AgentHistory(
+		model_output=output_model(
+			evaluation_previous_goal='Start',
+			memory='Ready',
+			next_goal='Finish',
+			action=[{'done': {'text': 'finished', 'success': True}}],  # type: ignore[arg-type]
+		),
+		result=[ActionResult(is_done=True, success=True)],
+		state=BrowserStateHistory(url='https://example.com', title='Example', tabs=[], interacted_element=[None]),
+		metadata=StepMetadata(step_number=0, step_start_time=0.0, step_end_time=1.0, step_interval=None),
+	)
+	return {'history': [item.model_dump()]}, output_model
+
+
+def test_current_history_round_trip_and_custom_actions():
+	data, output_model = _current_history_data()
+	history = AgentHistoryList.load_from_dict(data, output_model)
+
+	assert history.history[0].model_output is not None
+	assert history.history[0].model_output.action[0].model_dump()['done']['text'] == 'finished'
+
+
+def test_history_loader_rejects_missing_current_fields_without_repairing():
+	data, output_model = _current_history_data()
+	data['history'][0]['state'].pop('interacted_element')
+
+	with pytest.raises(ValidationError):
+		AgentHistoryList.load_from_dict(data, output_model)
+	assert 'interacted_element' not in data['history'][0]['state']
+
+
+def test_history_loader_rejects_missing_history_through_validation():
+	_, output_model = _current_history_data()
+
+	with pytest.raises(ValidationError):
+		AgentHistoryList.load_from_dict({}, output_model)
+
+
+def test_history_loader_rejects_missing_step_interval():
+	data, output_model = _current_history_data()
+	data['history'][0]['metadata'].pop('step_interval')
+
+	with pytest.raises(ValidationError):
+		AgentHistoryList.load_from_dict(data, output_model)
+
+
+def test_history_loader_rejects_old_output_schema():
+	data, output_model = _current_history_data()
+	data['history'][0]['model_output'].pop('next_goal')
+
+	with pytest.raises(ValidationError):
+		AgentHistoryList.load_from_dict(data, output_model)

@@ -27,8 +27,6 @@ console = Console()
 # GitHub template repository URL (for runtime fetching)
 TEMPLATE_REPO_URL = 'https://raw.githubusercontent.com/browser-use/template-library/main'
 
-# Export for backward compatibility with cli.py
-# Templates are fetched at runtime via _get_template_list()
 INIT_TEMPLATES: dict[str, Any] = {}
 
 

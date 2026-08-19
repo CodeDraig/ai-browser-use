@@ -28,7 +28,7 @@ llm = ChatOpenAI(model='gpt-4.1-mini')
 async def main():
 	await browser_session.start()
 	agents = [
-		Agent(task=task, llm=llm, browser_session=browser_session)
+		Agent(task=task, llm=llm, browser=browser_session)
 		for task in [
 			'Search Google for weather in Tokyo',
 			'Check Reddit front page title',

@@ -43,7 +43,7 @@ browser_session = BrowserSession(
 agent = Agent(
 	task=task,
 	llm=llm,
-	browser_session=browser_session,
+	browser=browser_session,
 )
 
 

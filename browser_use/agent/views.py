@@ -334,9 +334,6 @@ class ActionResult(BaseModel):
 	# Action metadata (e.g., click coordinates)
 	metadata: dict | None = None
 
-	# Deprecated
-	include_in_memory: bool = False  # whether to include in extracted_content inside long_term_memory
-
 	@model_validator(mode='after')
 	def validate_success_requires_done(self):
 		"""Ensure success=True can only be set when is_done=True"""
@@ -365,7 +362,7 @@ class StepMetadata(BaseModel):
 	step_start_time: float
 	step_end_time: float
 	step_number: int
-	step_interval: float | None = None
+	step_interval: float | None
 
 	@property
 	def duration_seconds(self) -> float:
@@ -378,20 +375,13 @@ class PlanItem(BaseModel):
 	status: Literal['pending', 'current', 'done', 'skipped'] = 'pending'
 
 
-class AgentBrain(BaseModel):
-	thinking: str | None = None
-	evaluation_previous_goal: str
-	memory: str
-	next_goal: str
-
-
 class AgentOutput(BaseModel):
 	model_config = ConfigDict(arbitrary_types_allowed=True, extra='forbid')
 
 	thinking: str | None = None
-	evaluation_previous_goal: str | None = None
-	memory: str | None = None
-	next_goal: str | None = None
+	evaluation_previous_goal: str | None = Field(...)
+	memory: str | None = Field(...)
+	next_goal: str | None = Field(...)
 	current_plan_item: int | None = None
 	plan_update: list[str] | None = None
 	action: list[ActionModel] = Field(
@@ -404,16 +394,6 @@ class AgentOutput(BaseModel):
 		schema = super().model_json_schema(**kwargs)
 		schema['required'] = ['evaluation_previous_goal', 'memory', 'next_goal', 'action']
 		return schema
-
-	@property
-	def current_state(self) -> AgentBrain:
-		"""For backward compatibility - returns an AgentBrain with the flattened properties"""
-		return AgentBrain(
-			thinking=self.thinking,
-			evaluation_previous_goal=self.evaluation_previous_goal if self.evaluation_previous_goal else '',
-			memory=self.memory if self.memory else '',
-			next_goal=self.next_goal if self.next_goal else '',
-		)
 
 	@staticmethod
 	def type_with_custom_actions(custom_actions: type[ActionModel]) -> type[AgentOutput]:
@@ -459,6 +439,10 @@ class AgentOutput(BaseModel):
 		"""Extend actions with custom actions for flash mode - memory and action fields only"""
 
 		class AgentOutputFlashMode(AgentOutput):
+			# Flash responses intentionally omit evaluation and next-goal fields.
+			evaluation_previous_goal: str | None = None
+			next_goal: str | None = None
+
 			@classmethod
 			def model_json_schema(cls, **kwargs):
 				schema = super().model_json_schema(**kwargs)
@@ -672,22 +656,27 @@ class AgentHistoryList(BaseModel, Generic[AgentStructuredOutput]):
 
 	@classmethod
 	def load_from_dict(cls, data: dict[str, Any], output_model: type[AgentOutput]) -> AgentHistoryList:
-		# loop through history and validate output_model actions to enrich with custom actions
-		for h in data.get('history', []):
-			# Use .get() to avoid KeyError on incomplete or legacy history entries
-			model_output = h.get('model_output')
-			if model_output:
-				if isinstance(model_output, dict):
-					h['model_output'] = output_model.model_validate(model_output)
-				else:
-					h['model_output'] = None
-			state = h.get('state') or {}
-			if 'interacted_element' not in state:
-				state['interacted_element'] = None
-				h['state'] = state
+		"""Load a current-format history and validate custom action models.
 
-		history = cls.model_validate(data)
-		return history
+		History files are persisted artifacts, so loading must not repair missing
+		fields or silently reinterpret an older schema. Pydantic validation is the
+		single authority for rejecting incomplete or historical data.
+		"""
+		if not isinstance(data, dict) or not isinstance(data.get('history'), list):
+			return cls.model_validate(data)
+
+		history_entries = data['history']
+		validated_entries: list[dict[str, Any]] = []
+		for raw_entry in history_entries:
+			if not isinstance(raw_entry, dict):
+				return cls.model_validate(data)
+			entry = dict(raw_entry)
+			raw_output = entry.get('model_output')
+			if isinstance(raw_output, dict):
+				entry['model_output'] = output_model.model_validate(raw_output)
+			validated_entries.append(entry)
+
+		return cls.model_validate({**data, 'history': validated_entries})
 
 	@classmethod
 	def load_from_file(cls, filepath: str | Path, output_model: type[AgentOutput]) -> AgentHistoryList:
@@ -810,10 +799,6 @@ class AgentHistoryList(BaseModel, Generic[AgentStructuredOutput]):
 			if actions:
 				action_names.append(actions[0])
 		return action_names
-
-	def model_thoughts(self) -> list[AgentBrain]:
-		"""Get all thoughts from history"""
-		return [h.model_output.current_state for h in self.history if h.model_output]
 
 	def model_outputs(self) -> list[AgentOutput]:
 		"""Get all model outputs from history"""

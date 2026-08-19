@@ -234,13 +234,13 @@ class TestBrowserSessionCloudIntegration:
 	"""Test BrowserSession integration with cloud browsers."""
 
 	async def test_cloud_browser_profile_property(self):
-		"""Test that cloud_browser property works correctly."""
+		"""Test that the cloud profile setting is exposed directly."""
 
 		# Just test the profile and session properties without connecting
 		profile = BrowserProfile(use_cloud=True)
 		session = BrowserSession(browser_profile=profile, cdp_url='ws://mock-url')  # Provide CDP URL to avoid connection
 
-		assert session.cloud_browser is True
+		assert session.browser_profile.use_cloud is True
 		assert session.browser_profile.use_cloud is True
 
 	async def test_browser_session_cloud_browser_logic(self, mock_auth_config, monkeypatch):
@@ -253,7 +253,7 @@ class TestBrowserSessionCloudIntegration:
 		profile = BrowserProfile(use_cloud=True)
 		assert profile.use_cloud is True
 
-		# Test that BrowserSession respects cloud_browser setting
+		# Test that BrowserSession respects the cloud profile setting
 		# Provide CDP URL to avoid actual connection attempts
 		session = BrowserSession(browser_profile=profile, cdp_url='ws://mock-url')
-		assert session.cloud_browser is True
+		assert session.browser_profile.use_cloud is True

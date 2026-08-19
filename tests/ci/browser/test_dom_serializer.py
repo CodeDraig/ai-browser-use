@@ -309,7 +309,7 @@ class TestDOMSerializer:
 		agent = Agent(
 			task=f'Navigate to {base_url}/dom-test-main',
 			llm=mock_llm,
-			browser_session=browser_session,
+			browser=browser_session,
 		)
 
 		history = await agent.run(max_steps=2)

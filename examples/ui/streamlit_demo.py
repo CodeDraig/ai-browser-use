@@ -61,7 +61,7 @@ def initialize_agent(query: str, provider: str):
 		task=query,
 		llm=llm,  # type: ignore
 		tools=tools,
-		browser_session=browser_session,
+		browser=browser_session,
 		use_vision=True,
 		max_actions_per_step=1,
 	), browser_session

@@ -12,7 +12,7 @@ async def main():
 	agent = Agent(
 		task='Go to github.com/trending then navigate to the first trending repository and report how many commits it has.',
 		llm=ChatOpenAI(model='gpt-4.1-mini'),
-		browser_session=browser_session,
+		browser=browser_session,
 	)
 
 	await agent.run(max_steps=5)

@@ -41,7 +41,6 @@ def create_mock_llm(
 	llm._verified_api_keys = True
 	llm.provider = 'mock'
 	llm.name = model_name
-	llm.model_name = model_name
 
 	default_done_action = """
 	{
@@ -292,7 +291,6 @@ class TestFallbackLLMIntegration:
 		llm._verified_api_keys = True
 		llm.provider = 'mock'
 		llm.name = model_name
-		llm.model_name = model_name
 
 		async def mock_ainvoke(*args, **kwargs):
 			if fail_with == ModelRateLimitError:
@@ -312,7 +310,6 @@ class TestFallbackLLMIntegration:
 		llm._verified_api_keys = True
 		llm.provider = 'mock'
 		llm.name = model_name
-		llm.model_name = model_name
 
 		default_done_action = """
 		{
@@ -354,7 +351,7 @@ class TestFallbackLLMIntegration:
 
 		# Create agent first with a working mock LLM
 		placeholder = create_mock_llm('placeholder')
-		agent = Agent(task='Test task', llm=placeholder, browser_session=browser_session)
+		agent = Agent(task='Test task', llm=placeholder, browser=browser_session)
 
 		# Create a failing primary and succeeding fallback
 		primary = self._create_failing_mock_llm(
@@ -388,7 +385,7 @@ class TestFallbackLLMIntegration:
 
 		# Create agent first with a working mock LLM
 		placeholder = create_mock_llm('placeholder')
-		agent = Agent(task='Test task', llm=placeholder, browser_session=browser_session)
+		agent = Agent(task='Test task', llm=placeholder, browser=browser_session)
 
 		# Replace with failing LLM
 		primary = self._create_failing_mock_llm(
@@ -416,7 +413,7 @@ class TestFallbackLLMIntegration:
 
 		# Create agent first with a working mock LLM
 		placeholder = create_mock_llm('placeholder')
-		agent = Agent(task='Test task', llm=placeholder, browser_session=browser_session)
+		agent = Agent(task='Test task', llm=placeholder, browser=browser_session)
 
 		# Both models fail
 		primary = self._create_failing_mock_llm('primary', fail_with=ModelRateLimitError, fail_status_code=429)

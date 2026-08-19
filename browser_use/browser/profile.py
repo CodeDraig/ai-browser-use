@@ -12,8 +12,8 @@ from urllib.parse import urlparse
 
 from pydantic import AfterValidator, AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from browser_use.browser.cloud.views import CloudBrowserParams
-from browser_use.config import CONFIG
+from browser_use.browser.cloud.views import CreateBrowserRequest
+from browser_use.config import get_environment_config
 from browser_use.logging_utils import log_pretty_path
 
 logger = logging.getLogger(__name__)
@@ -437,7 +437,8 @@ class BrowserLaunchArgs(BaseModel):
 	)
 	channel: BrowserChannel | None = None  # https://playwright.dev/docs/browsers#chromium-headless-shell
 	chromium_sandbox: bool = Field(
-		default=not CONFIG.IN_DOCKER, description='Whether to enable Chromium sandboxing (recommended unless inside Docker).'
+		default_factory=lambda: not get_environment_config().IN_DOCKER,
+		description='Whether to enable Chromium sandboxing (recommended unless inside Docker).',
 	)
 	devtools: bool = Field(
 		default=False, description='Whether to open DevTools panel automatically for every page, only works when headless=False.'
@@ -586,7 +587,7 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 	"""
 
 	model_config = ConfigDict(
-		extra='ignore',
+		extra='forbid',
 		validate_assignment=True,
 		revalidate_instances='always',
 		from_attributes=True,
@@ -605,12 +606,7 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 		description='Use browser-use cloud browser service instead of local browser',
 	)
 
-	@property
-	def cloud_browser(self) -> bool:
-		"""Alias for use_cloud field for compatibility."""
-		return self.use_cloud
-
-	cloud_browser_params: CloudBrowserParams | None = Field(
+	cloud_browser_params: CreateBrowserRequest | None = Field(
 		default=None, description='Parameters for creating a cloud browser instance'
 	)
 
@@ -658,8 +654,6 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 		default=None,
 		description='Browser window size to use when headless=False.',
 	)
-	window_height: int | None = Field(default=None, description='DEPRECATED, use window_size["height"] instead', exclude=True)
-	window_width: int | None = Field(default=None, description='DEPRECATED, use window_size["width"] instead', exclude=True)
 	window_position: ViewportSize | None = Field(
 		default=ViewportSize(width=0, height=0),
 		description='Window position to use for the browser x,y from the top left when headless=False.',
@@ -751,20 +745,6 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 		return v
 
 	@model_validator(mode='after')
-	def copy_old_config_names_to_new(self) -> Self:
-		"""Copy old config window_width & window_height to window_size."""
-		if self.window_width or self.window_height:
-			logger.warning(
-				f'⚠️ BrowserProfile(window_width=..., window_height=...) are deprecated, use BrowserProfile(window_size={"width": 1920, "height": 1080}) instead.'
-			)
-			window_size = self.window_size or ViewportSize(width=0, height=0)
-			window_size['width'] = window_size['width'] or self.window_width or 1920
-			window_size['height'] = window_size['height'] or self.window_height or 1080
-			self.window_size = window_size
-
-		return self
-
-	@model_validator(mode='after')
 	def warn_storage_state_user_data_dir_conflict(self) -> Self:
 		"""Warn when both storage_state and user_data_dir are set, as this can cause conflicts."""
 		has_storage_state = self.storage_state is not None
@@ -787,7 +767,7 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 		"""
 
 		is_not_using_default_chromium = self.executable_path or self.channel not in (BROWSERUSE_DEFAULT_CHANNEL, None)
-		if self.user_data_dir == CONFIG.BROWSER_USE_DEFAULT_USER_DATA_DIR and is_not_using_default_chromium:
+		if self.user_data_dir == get_environment_config().default_user_data_dir and is_not_using_default_chromium:
 			alternate_name = (
 				Path(self.executable_path).name.lower().replace(' ', '-')
 				if self.executable_path
@@ -798,7 +778,7 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 			logger.warning(
 				f'⚠️ {self} Changing user_data_dir= {log_pretty_path(self.user_data_dir)} ➡️ .../default-{alternate_name} to avoid {alternate_name.upper()} corruping default profile created by {BROWSERUSE_DEFAULT_CHANNEL.name}'
 			)
-			self.user_data_dir = CONFIG.BROWSER_USE_DEFAULT_USER_DATA_DIR.parent / f'default-{alternate_name}'
+			self.user_data_dir = get_environment_config().default_user_data_dir.parent / f'default-{alternate_name}'
 		return self
 
 	@model_validator(mode='after')
@@ -908,7 +888,7 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 			*self.args,
 			f'--user-data-dir={self.user_data_dir}',
 			f'--profile-directory={self.profile_directory}',
-			*(CHROME_DOCKER_ARGS if (CONFIG.IN_DOCKER or not self.chromium_sandbox) else []),
+			*(CHROME_DOCKER_ARGS if (get_environment_config().IN_DOCKER or not self.chromium_sandbox) else []),
 			*(CHROME_HEADLESS_ARGS if self.headless else []),
 			*(CHROME_DISABLE_SECURITY_ARGS if self.disable_security else []),
 			*(CHROME_DETERMINISTIC_RENDERING_ARGS if self.deterministic_rendering else []),
@@ -1048,7 +1028,7 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 		]
 
 		# Create extensions cache directory
-		cache_dir = CONFIG.BROWSER_USE_EXTENSIONS_DIR
+		cache_dir = get_environment_config().extensions_dir
 		cache_dir.mkdir(parents=True, exist_ok=True)
 
 		extension_paths = []

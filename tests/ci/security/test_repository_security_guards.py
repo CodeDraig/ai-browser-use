@@ -1,5 +1,6 @@
 import importlib
 import importlib.util
+import inspect
 from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
@@ -155,3 +156,97 @@ def test_default_action_protocol_order_is_stable():
 		'read_file',
 		'evaluate',
 	]
+
+
+def test_removed_constructor_aliases_and_wrappers_are_absent():
+	import pytest
+	from pydantic import ValidationError
+
+	from browser_use.actor.page import Page
+	from browser_use.agent.service import Agent
+	from browser_use.agent.views import ActionResult, AgentHistoryList, AgentOutput
+	from browser_use.browser.profile import BrowserProfile
+	from browser_use.browser.session import BrowserSession
+	from browser_use.llm.base import BaseChatModel
+
+	assert not {'browser_session', 'controller', 'skill_ids'} & set(inspect.signature(Agent).parameters)
+	assert not {
+		'profile_id',
+		'proxy_country_code',
+		'timeout',
+		'cloud_browser',
+		'window_width',
+		'window_height',
+	} & set(inspect.signature(BrowserSession).parameters)
+	assert not {'window_width', 'window_height', 'cloud_browser'} & set(BrowserProfile.model_fields)
+	for kwargs in (
+		{'cloud_browser': True},
+		{'window_width': 1440},
+		{'window_height': 900},
+		{'windwo_size': {'width': 1440, 'height': 900}},
+	):
+		with pytest.raises(ValidationError, match='Extra inputs are not permitted'):
+			BrowserProfile.model_validate(kwargs)
+	assert not hasattr(ActionResult, 'include_in_memory')
+	assert not hasattr(BaseChatModel, 'model_name')
+	assert not hasattr(AgentOutput, 'current_state')
+	assert not hasattr(AgentHistoryList, 'model_thoughts')
+	assert not hasattr(Page, 'navigate')
+
+	from browser_use.actor import utils as actor_utils
+
+	assert not hasattr(actor_utils, 'get_key_info')
+
+	from browser_use.llm import BaseChatModel as exported_base
+	from browser_use.llm import models
+
+	assert exported_base is BaseChatModel
+	assert models is not None
+	for name in (
+		'BaseMessage',
+		'UserMessage',
+		'SystemMessage',
+		'AssistantMessage',
+		'ContentText',
+		'ContentImage',
+		'ContentRefusal',
+	):
+		assert not hasattr(importlib.import_module('browser_use.llm'), name)
+
+	with pytest.raises(ImportError):
+		exec('from browser_use.llm import BaseMessage', {})
+	from browser_use.llm.messages import BaseMessage
+
+	assert BaseMessage is not None
+
+
+def test_removed_cli_config_and_dom_compatibility_surfaces_are_absent():
+	import pytest
+
+	from browser_use.skills.install import _build_parser
+
+	with pytest.raises(SystemExit):
+		_build_parser().parse_args(['install', '--force'])
+
+	source = '\n'.join(path.read_text(encoding='utf-8') for path in (REPOSITORY_ROOT / 'browser_use').rglob('*.py'))
+	for removed in (
+		'_LEGACY_HINTS',
+		'_legacy_command',
+		'_legacy_migration_message',
+		'browser_use_tui_main',
+		'OldConfig',
+		'FlatEnvConfig',
+		'load_and_migrate_config',
+		'is_running_in_docker',
+		"Path('/.dockerenv')",
+		'len(psutil.pids())',
+		'\ndef get_key_info(',
+		'include_in_memory',
+		'model_thoughts',
+		"data-browser-use-exclude')",
+	):
+		assert removed not in source, removed
+
+	assert set(__import__('tomllib').loads((REPOSITORY_ROOT / 'pyproject.toml').read_text())['project']['scripts']) == {
+		'browser-use'
+	}

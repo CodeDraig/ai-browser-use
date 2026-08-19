@@ -71,7 +71,7 @@ Steps:
 
 Return ONLY the key brand info, not page structure details.""",
 			llm=self.llm,
-			browser_session=browser_session,
+			browser=browser_session,
 			max_actions_per_step=2,
 			step_timeout=30,
 			use_thinking=False,

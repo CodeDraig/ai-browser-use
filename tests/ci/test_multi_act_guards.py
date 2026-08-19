@@ -180,7 +180,7 @@ class TestStaticGuard:
 		]
 
 		mock_llm = create_mock_llm()
-		agent = Agent(task='test', llm=mock_llm, browser_session=browser_session, tools=tools)
+		agent = Agent(task='test', llm=mock_llm, browser=browser_session, tools=tools)
 
 		results = await agent.multi_act(actions)
 
@@ -210,7 +210,7 @@ class TestStaticGuard:
 		]
 
 		mock_llm = create_mock_llm()
-		agent = Agent(task='test', llm=mock_llm, browser_session=browser_session, tools=tools)
+		agent = Agent(task='test', llm=mock_llm, browser=browser_session, tools=tools)
 
 		results = await agent.multi_act(actions)
 
@@ -255,7 +255,7 @@ class TestRuntimeGuard:
 		]
 
 		mock_llm = create_mock_llm()
-		agent = Agent(task='test', llm=mock_llm, browser_session=browser_session, tools=tools)
+		agent = Agent(task='test', llm=mock_llm, browser=browser_session, tools=tools)
 
 		results = await agent.multi_act(actions)
 
@@ -290,7 +290,7 @@ class TestSafeChain:
 		]
 
 		mock_llm = create_mock_llm()
-		agent = Agent(task='test', llm=mock_llm, browser_session=browser_session, tools=tools)
+		agent = Agent(task='test', llm=mock_llm, browser=browser_session, tools=tools)
 
 		results = await agent.multi_act(actions)
 

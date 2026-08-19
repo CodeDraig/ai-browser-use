@@ -1,4 +1,4 @@
-"""Browser Use skill alias for Browser Harness"""
+"""Browser Use skill adapter backed by Browser Harness."""
 
 from __future__ import annotations
 

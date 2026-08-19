@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from browser_use.config import CONFIG
+from browser_use.config import get_environment_config
 
 
 def addLoggingLevel(levelName, levelNum, methodName=None):
@@ -66,7 +66,7 @@ def setup_logging(stream=None, log_level=None, force_setup=False, debug_log_file
 
 	Args:
 		stream: Output stream for logs (default: sys.stdout). Can be sys.stderr for MCP mode.
-		log_level: Override log level (default: uses CONFIG.BROWSER_USE_LOGGING_LEVEL)
+		log_level: Override log level (default: uses get_environment_config().logging_level)
 		force_setup: Force reconfiguration even if handlers already exist
 		debug_log_file: Path to log file for debug level logs only
 		info_log_file: Path to log file for info level logs only
@@ -77,7 +77,7 @@ def setup_logging(stream=None, log_level=None, force_setup=False, debug_log_file
 	except AttributeError:
 		pass  # Level already exists, which is fine
 
-	log_type = log_level or CONFIG.BROWSER_USE_LOGGING_LEVEL
+	log_type = log_level or get_environment_config().logging_level
 
 	# Check if handlers are already set up
 	if logging.getLogger().hasHandlers() and not force_setup:
@@ -175,7 +175,7 @@ def setup_logging(stream=None, log_level=None, force_setup=False, debug_log_file
 	# Configure CDP logging using cdp_use's setup function
 	# This enables the formatted CDP output using CDP_LOGGING_LEVEL environment variable
 	# Convert CDP_LOGGING_LEVEL string to logging level
-	cdp_level_str = CONFIG.CDP_LOGGING_LEVEL.upper()
+	cdp_level_str = get_environment_config().CDP_LOGGING_LEVEL.upper()
 	cdp_level = getattr(logging, cdp_level_str, logging.WARNING)
 
 	try:

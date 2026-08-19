@@ -105,7 +105,7 @@ async def main():
             After that, go to the Google login page and Use the force, luke.
         """,
 		llm=llm,
-		browser_session=browser_session,
+		browser=browser_session,
 		tools=tools,
 	)
 

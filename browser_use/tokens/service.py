@@ -33,17 +33,14 @@ from browser_use.tokens.views import (
 
 load_dotenv()
 
-from browser_use.config import CONFIG
+from browser_use.config import get_environment_config
 
 logger = logging.getLogger(__name__)
 cost_logger = logging.getLogger('cost')
 
 
 def xdg_cache_home() -> Path:
-	default = Path.home() / '.cache'
-	if CONFIG.XDG_CACHE_HOME and (path := Path(CONFIG.XDG_CACHE_HOME)).is_absolute():
-		return path
-	return default
+	return get_environment_config().cache_home
 
 
 class TokenCost:
@@ -55,7 +52,7 @@ class TokenCost:
 
 	def __init__(self, include_cost: bool = False, pricing_url: str | None = None):
 		self.include_cost = include_cost or os.getenv('BROWSER_USE_CALCULATE_COST', 'false').lower() == 'true'
-		self.pricing_url = pricing_url or CONFIG.BROWSER_USE_MODEL_PRICING_URL or self.DEFAULT_PRICING_URL
+		self.pricing_url = pricing_url or get_environment_config().BROWSER_USE_MODEL_PRICING_URL or self.DEFAULT_PRICING_URL
 
 		self.usage_history: list[TokenUsageEntry] = []
 		self.registered_llms: dict[str, BaseChatModel] = {}

@@ -24,7 +24,7 @@ pip install -U browser-use
 
 Export your Gemini API key, get it from: [Google AI Studio](https://makersuite.google.com/app/apikey) 
 ```
-export GEMINI_API_KEY='your-google-api-key-here'
+export GOOGLE_API_KEY='your-google-api-key-here'
 ```
 
 Clone the repo and cd into the app folder

@@ -138,7 +138,7 @@ class TestNavigationEdgeCases:
 		agent = Agent(
 			task=f'Navigate to {base_url}/broken and check if page exists',
 			llm=mock_llm,
-			browser_session=browser_session,
+			browser=browser_session,
 		)
 
 		# Run with timeout - should complete within 2 minutes
@@ -193,7 +193,7 @@ class TestNavigationEdgeCases:
 		agent = Agent(
 			task=f'Navigate to {base_url}/slow and wait for it to load',
 			llm=mock_llm,
-			browser_session=browser_session,
+			browser=browser_session,
 		)
 
 		# Run with timeout - should complete within 2 minutes
@@ -251,7 +251,7 @@ class TestNavigationEdgeCases:
 		agent = Agent(
 			task=f'Navigate to {base_url}/notfound and check if page exists',
 			llm=mock_llm,
-			browser_session=browser_session,
+			browser=browser_session,
 		)
 
 		# Run with timeout - should complete within 2 minutes
@@ -308,7 +308,7 @@ class TestNavigationEdgeCases:
 		agent = Agent(
 			task=f'Navigate to {nonexisting_url} and check if it exists',
 			llm=mock_llm,
-			browser_session=browser_session,
+			browser=browser_session,
 		)
 
 		# Run with timeout - should complete within 2 minutes
@@ -377,7 +377,7 @@ class TestNavigationEdgeCases:
 		agent = Agent(
 			task=f'First navigate to {base_url}/broken, then navigate to {base_url}/valid',
 			llm=mock_llm,
-			browser_session=browser_session,
+			browser=browser_session,
 		)
 
 		# Run with timeout - should complete within 2 minutes

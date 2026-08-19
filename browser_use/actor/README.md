@@ -6,7 +6,7 @@ Browser Actor is a web automation library built on CDP (Chrome DevTools Protocol
 
 ### Integrated with Browser (Recommended)
 ```python
-from browser_use import Browser  # Alias for BrowserSession
+from browser_use import Browser  # Preferred package-root browser name
 
 # Create and start browser session
 browser = Browser()
@@ -137,7 +137,7 @@ products = await page.extract_content(
 
 ## Core Classes
 
-- **BrowserSession** (aliased as **Browser**): Main browser session manager with tab operations
+- **Browser**: Preferred package-root name for the browser session manager with tab operations
 - **Page**: Represents a single browser tab or iframe for page-level operations
 - **Element**: Individual DOM element for interactions and property access
 - **Mouse**: Mouse operations within a page (click, move, scroll)

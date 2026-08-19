@@ -83,7 +83,7 @@ class SlackBot:
 	async def run_agent(self, task: str) -> str:
 		try:
 			browser_session = BrowserSession(browser_profile=self.browser_profile)
-			agent = Agent(task=task, llm=self.llm, browser_session=browser_session)
+			agent = Agent(task=task, llm=self.llm, browser=browser_session)
 			result = await agent.run()
 
 			agent_message = None

@@ -1,7 +1,7 @@
 """Cloud browser service integration for browser-use.
 
 This module provides integration with the browser-use cloud browser service.
-When cloud_browser=True, it automatically creates a cloud browser instance
+When use_cloud=True, it automatically creates a cloud browser instance
 and returns the CDP URL for connection.
 """
 

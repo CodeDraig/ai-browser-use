@@ -40,12 +40,12 @@ setup_environment(args.debug)
 
 from browser_use import Agent, BrowserSession, ChatGoogle
 
-GEMINI_API_KEY = os.getenv('GOOGLE_API_KEY') or 'xxxx'
+GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY') or 'xxxx'
 
-if GEMINI_API_KEY == 'xxxx':
+if GOOGLE_API_KEY == 'xxxx':
 	print('⚠️  WARNING: Please set GOOGLE_API_KEY environment variable')
 	print('   You can get an API key at: https://makersuite.google.com/app/apikey')
-	print("   Then run: export GEMINI_API_KEY='your-api-key-here'")
+	print("   Then run: export GOOGLE_API_KEY='your-api-key-here'")
 	print()
 
 
@@ -80,10 +80,10 @@ async def extract_latest_article(site_url: str, debug: bool = False) -> dict:
 		f'{{"title": "...", "url": "...", "posting_time": "...", "short_summary": "...", "long_summary": "...", "sentiment": "positive|neutral|negative"}}'
 	)
 
-	llm = ChatGoogle(model='gemini-2.0-flash', temperature=0.1, api_key=GEMINI_API_KEY)
+	llm = ChatGoogle(model='gemini-2.0-flash', temperature=0.1, api_key=GOOGLE_API_KEY)
 	browser_session = BrowserSession(headless=not debug)
 
-	agent = Agent(task=prompt, llm=llm, browser_session=browser_session, use_vision=False)
+	agent = Agent(task=prompt, llm=llm, browser=browser_session, use_vision=False)
 
 	if debug:
 		print(f'[DEBUG] Starting extraction from {site_url}')

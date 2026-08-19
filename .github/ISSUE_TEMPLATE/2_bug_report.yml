@@ -48,7 +48,7 @@ body:
         agent = Agent(
             task='...',
             llm=ChatOpenAI(model="gpt-4.1-mini"),
-            browser_session=BrowserSession(headless=False),
+            browser=BrowserSession(headless=False),
         )
         ...
 

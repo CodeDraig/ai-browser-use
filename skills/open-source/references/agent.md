@@ -33,7 +33,7 @@ async def main():
 
 ### Core Settings
 - `tools`: Registry of tools the agent can call
-- `skills` (or `skill_ids`): List of skill IDs to load (e.g., `['skill-uuid']` or `['*']` for all). Requires `BROWSER_USE_API_KEY`
+- `skills`: List of skill IDs to load (e.g., `['skill-uuid']` or `['*']` for all). Requires `BROWSER_USE_API_KEY`
 - `browser`: Browser object for browser settings
 - `output_model_schema`: Pydantic model class for structured output validation
 
@@ -77,10 +77,6 @@ async def main():
 - `calculate_cost` (default: `False`): Track API costs (access via `history.usage`)
 - `display_files_in_done_text` (default: `True`)
 
-### Backwards Compatibility
-- `controller` → alias for `tools`
-- `browser_session` → alias for `browser`
-
 ---
 
 ## Output Format
@@ -106,7 +102,6 @@ history.final_result()            # Final extracted content (last step)
 history.is_done()                 # Agent completed?
 history.is_successful()           # Completed successfully? (None if not done)
 history.has_errors()              # Any errors?
-history.model_thoughts()          # Reasoning (AgentBrain objects)
 history.action_results()          # All ActionResult objects
 history.action_history()          # Truncated action history
 history.number_of_steps()         # Step count
@@ -228,7 +223,7 @@ Full access to Agent instance:
 - `agent.llm` — direct LLM access
 - `agent.state` — internal state (thoughts, outputs, actions)
 - `agent.history` — execution history:
-  - `.model_thoughts()`, `.model_outputs()`, `.model_actions()`
+  - `.model_outputs()`, `.model_actions()`
   - `.extracted_content()`, `.urls()`
 - `agent.browser_session` — BrowserSession + CDP:
   - `.agent_focus_target_id` — current target ID

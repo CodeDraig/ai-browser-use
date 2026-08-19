@@ -29,7 +29,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 load_dotenv()
 
 from browser_use import Agent, ChatOpenAI, Tools
-from browser_use.config import CONFIG
+from browser_use.config import get_environment_config
 from browser_use.integrations.gmail import GmailService, register_gmail_actions
 
 
@@ -40,7 +40,7 @@ class GmailGrantManager:
 	"""
 
 	def __init__(self):
-		self.config_dir = CONFIG.BROWSER_USE_CONFIG_DIR
+		self.config_dir = get_environment_config().config_dir
 		self.credentials_file = self.config_dir / 'gmail_credentials.json'
 		self.token_file = self.config_dir / 'gmail_token.json'
 		print(f'GmailGrantManager initialized with config_dir: {self.config_dir}')

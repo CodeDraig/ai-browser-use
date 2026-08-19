@@ -218,7 +218,6 @@ class TestExtractImagesAutoDetection:
 		mock_llm._verified_api_keys = True
 		mock_llm.provider = 'mock'
 		mock_llm.name = 'mock-llm'
-		mock_llm.model_name = 'mock-llm'
 
 		async def capture_ainvoke(*args, **kwargs):
 			if args:
@@ -268,7 +267,6 @@ class TestExtractImagesAutoDetection:
 		mock_llm._verified_api_keys = True
 		mock_llm.provider = 'mock'
 		mock_llm.name = 'mock-llm'
-		mock_llm.model_name = 'mock-llm'
 
 		async def capture_ainvoke(*args, **kwargs):
 			if args:

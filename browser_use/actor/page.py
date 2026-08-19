@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, TypeVar
 from pydantic import BaseModel
 
 from browser_use import logger
-from browser_use.actor.utils import get_key_info
+from browser_use.actor.utils import Utils
 from browser_use.dom.serializer.serializer import DOMTreeSerializer
 from browser_use.dom.service import DomService
 from browser_use.llm.messages import SystemMessage, UserMessage
@@ -228,14 +228,14 @@ class Page:
 
 			# Press modifier keys
 			for mod in modifiers:
-				code, vk_code = get_key_info(mod)
+				code, vk_code = Utils.get_key_info(mod)
 				params: 'DispatchKeyEventParameters' = {'type': 'keyDown', 'key': mod, 'code': code}
 				if vk_code is not None:
 					params['windowsVirtualKeyCode'] = vk_code
 				await self._client.send.Input.dispatchKeyEvent(params, session_id=session_id)
 
 			# Press main key with modifiers bitmask
-			main_code, main_vk_code = get_key_info(main_key)
+			main_code, main_vk_code = Utils.get_key_info(main_key)
 			main_down_params: 'DispatchKeyEventParameters' = {
 				'type': 'keyDown',
 				'key': main_key,
@@ -258,14 +258,14 @@ class Page:
 
 			# Release modifier keys
 			for mod in reversed(modifiers):
-				code, vk_code = get_key_info(mod)
+				code, vk_code = Utils.get_key_info(mod)
 				release_params: 'DispatchKeyEventParameters' = {'type': 'keyUp', 'key': mod, 'code': code}
 				if vk_code is not None:
 					release_params['windowsVirtualKeyCode'] = vk_code
 				await self._client.send.Input.dispatchKeyEvent(release_params, session_id=session_id)
 		else:
 			# Simple key press
-			code, vk_code = get_key_info(key)
+			code, vk_code = Utils.get_key_info(key)
 			key_down_params: 'DispatchKeyEventParameters' = {'type': 'keyDown', 'key': key, 'code': code}
 			if vk_code is not None:
 				key_down_params['windowsVirtualKeyCode'] = vk_code
@@ -314,10 +314,6 @@ class Page:
 
 		params: 'NavigateParameters' = {'url': url}
 		await self._client.send.Page.navigate(params, session_id=session_id)
-
-	async def navigate(self, url: str) -> None:
-		"""Alias for goto."""
-		await self.goto(url)
 
 	async def go_back(self) -> None:
 		"""Navigate back in history."""

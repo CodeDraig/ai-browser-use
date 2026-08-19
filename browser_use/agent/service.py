@@ -60,7 +60,7 @@ from browser_use.agent.views import (
 from browser_use.browser.events import _get_timeout
 from browser_use.browser.session import DEFAULT_BROWSER_PROFILE
 from browser_use.browser.views import BrowserStateSummary
-from browser_use.config import CONFIG
+from browser_use.config import get_environment_config
 from browser_use.dom.views import DOMInteractedElement, MatchLevel
 from browser_use.filesystem.file_system import FileSystem
 from browser_use.logging_utils import log_pretty_path, time_execution_async, time_execution_sync
@@ -81,11 +81,11 @@ def log_response(response: AgentOutput, registry=None, logger=None) -> None:
 		logger = logging.getLogger(__name__)
 
 	# Only log thinking if it's present
-	if response.current_state.thinking:
-		logger.debug(f'💡 Thinking:\n{response.current_state.thinking}')
+	if response.thinking:
+		logger.debug(f'💡 Thinking:\n{response.thinking}')
 
 	# Only log evaluation if it's not empty
-	eval_goal = response.current_state.evaluation_previous_goal
+	eval_goal = response.evaluation_previous_goal or ''
 	if eval_goal:
 		if 'success' in eval_goal.lower():
 			emoji = '👍'
@@ -101,11 +101,11 @@ def log_response(response: AgentOutput, registry=None, logger=None) -> None:
 			logger.info(f'  {emoji} Eval: {eval_goal}')
 
 	# Always log memory if present
-	if response.current_state.memory:
-		logger.info(f'  🧠 Memory: {response.current_state.memory}')
+	if response.memory:
+		logger.info(f'  🧠 Memory: {response.memory}')
 
 	# Only log next goal if it's not empty
-	next_goal = response.current_state.next_goal
+	next_goal = response.next_goal or ''
 	if next_goal:
 		# Blue color for next goal
 		logger.info(f'  \033[34m🎯 Next goal: {next_goal}\033[0m')
@@ -125,13 +125,10 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		llm: BaseChatModel | None = None,
 		# Optional parameters
 		browser_profile: BrowserProfile | None = None,
-		browser_session: BrowserSession | None = None,
-		browser: Browser | None = None,  # Alias for browser_session
+		browser: Browser | None = None,
 		tools: Tools[Context] | None = None,
-		controller: Tools[Context] | None = None,  # Alias for tools
 		# Skills integration
-		skill_ids: list[str | Literal['*']] | None = None,
-		skills: list[str | Literal['*']] | None = None,  # Alias for skill_ids
+		skills: list[str | Literal['*']] | None = None,
 		skill_service: Any | None = None,
 		# Initial agent run parameters
 		sensitive_data: SensitiveData | None = None,
@@ -196,7 +193,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		max_clickable_elements_length: int = 40000,
 		_url_shortening_limit: int = 25,
 		enable_signal_handler: bool = True,
-		**kwargs,
 	):
 		# Validate llm_screenshot_size
 		if llm_screenshot_size is not None:
@@ -209,7 +205,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				raise ValueError('llm_screenshot_size dimensions must be at least 100 pixels')
 			self.logger.info(f'🖼️  LLM screenshot resizing enabled: {width}x{height}')
 		if llm is None:
-			default_llm_name = CONFIG.DEFAULT_LLM
+			default_llm_name = get_environment_config().DEFAULT_LLM
 			if default_llm_name:
 				from browser_use.llm.models import get_llm_by_name
 
@@ -273,10 +269,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			base_profile = base_profile.model_copy(update={'demo_mode': demo_mode})
 		browser_profile = base_profile
 
-		# Handle browser vs browser_session parameter (browser takes precedence)
-		if browser and browser_session:
-			raise ValueError('Cannot specify both "browser" and "browser_session" parameters. Use "browser" for the cleaner API.')
-		browser_session = browser or browser_session
+		browser_session = browser
 
 		if browser_session is not None and demo_mode is not None and browser_session.browser_profile.demo_mode != demo_mode:
 			browser_session.browser_profile = browser_session.browser_profile.model_copy(update={'demo_mode': demo_mode})
@@ -298,8 +291,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		# Set up tools first (needed to detect output_model_schema)
 		if tools is not None:
 			self.tools = tools
-		elif controller is not None:
-			self.tools = controller
 		else:
 			# Exclude screenshot tool when use_vision is not auto
 			exclude_actions = ['screenshot'] if use_vision != 'auto' else []
@@ -318,20 +309,15 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		if supports_coordinate_clicking:
 			self.tools.set_coordinate_clicking(True)
 
-		# Handle skills vs skill_ids parameter (skills takes precedence)
-		if skills and skill_ids:
-			raise ValueError('Cannot specify both "skills" and "skill_ids" parameters. Use "skills" for the cleaner API.')
-		skill_ids = skills or skill_ids
-
-		# Skills integration - use injected service or create from skill_ids
+		# Skills integration - use injected service or create from skill IDs
 		self.skill_service = None
 		self._skills_registered = False
 		if skill_service is not None:
 			self.skill_service = skill_service
-		elif skill_ids:
+		elif skills:
 			from browser_use.skills import SkillService
 
-			self.skill_service = SkillService(skill_ids=skill_ids)
+			self.skill_service = SkillService(skill_ids=skills)
 
 		# Structured output - use explicit param or detect from tools
 		tools_output_model = self.tools.get_output_model()
@@ -530,7 +516,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 		# Event bus with WAL persistence
 		# Default to ~/.config/browseruse/events/{agent_session_id}.jsonl
-		# wal_path = CONFIG.BROWSER_USE_CONFIG_DIR / 'events' / f'{self.session_id}.jsonl'
+		# wal_path = get_environment_config().config_dir / 'events' / f'{self.session_id}.jsonl'
 		self.eventbus = EventBus(name=f'Agent_{str(self.id)[-4:]}')
 
 		if self.settings.save_conversation_path:
@@ -1947,7 +1933,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		self.logger.debug(f'🤖 Browser-Use Library Version {self.version} ({self.source})')
 
 		# Check for latest version and log upgrade message if needed
-		if CONFIG.BROWSER_USE_VERSION_CHECK:
+		if get_environment_config().BROWSER_USE_VERSION_CHECK:
 			latest_version = await check_latest_browser_use_version()
 			if latest_version and latest_version != self.version:
 				self.logger.info(
@@ -2022,22 +2008,21 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		if not self._demo_mode_enabled:
 			return
 
-		state = parsed.current_state
 		step_meta = {'step': self.state.n_steps}
 
-		if state.thinking:
-			await self._demo_mode_log(state.thinking, 'thought', step_meta)
+		if parsed.thinking:
+			await self._demo_mode_log(parsed.thinking, 'thought', step_meta)
 
-		if state.evaluation_previous_goal:
-			eval_text = state.evaluation_previous_goal
+		if parsed.evaluation_previous_goal:
+			eval_text = parsed.evaluation_previous_goal
 			level = 'success' if 'success' in eval_text.lower() else 'warning' if 'failure' in eval_text.lower() else 'info'
 			await self._demo_mode_log(eval_text, level, step_meta)
 
-		if state.memory:
-			await self._demo_mode_log(f'Memory: {state.memory}', 'info', step_meta)
+		if parsed.memory:
+			await self._demo_mode_log(f'Memory: {parsed.memory}', 'info', step_meta)
 
-		if state.next_goal:
-			await self._demo_mode_log(f'Next goal: {state.next_goal}', 'info', step_meta)
+		if parsed.next_goal:
+			await self._demo_mode_log(f'Next goal: {parsed.next_goal}', 'info', step_meta)
 
 	def _log_step_completion_summary(self, step_start_time: float, result: list[ActionResult]) -> str | None:
 		"""Log step completion summary with action count, timing, and success/failure stats"""
@@ -2464,7 +2449,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 				self.history.add_item(
 					AgentHistory(
 						model_output=None,
-						result=[ActionResult(error=agent_run_error, include_in_memory=True)],
+						result=[ActionResult(error=agent_run_error)],
 						state=BrowserStateHistory(
 							url='',
 							title='',
@@ -2950,7 +2935,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 		try:
 			for i, history_item in enumerate(history.history):
-				goal = history_item.model_output.current_state.next_goal if history_item.model_output else ''
+				goal = history_item.model_output.next_goal if history_item.model_output else ''
 				step_num = history_item.metadata.step_number if history_item.metadata else i
 				step_name = 'Initial actions' if step_num == 0 else f'Step {step_num}'
 
@@ -3008,7 +2993,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 					results.append(
 						ActionResult(
 							extracted_content='Skipped - redundant retry of previous step',
-							include_in_memory=False,
 						)
 					)
 					# Don't update previous_item/previous_step_succeeded - keep tracking the original step
@@ -3772,7 +3756,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		"""
 
 		# Skip verification if already done
-		if getattr(self.llm, '_verified_api_keys', None) is True or CONFIG.SKIP_LLM_API_KEY_VERIFICATION:
+		if getattr(self.llm, '_verified_api_keys', None) is True or get_environment_config().SKIP_LLM_API_KEY_VERIFICATION:
 			setattr(self.llm, '_verified_api_keys', True)
 			return True
 

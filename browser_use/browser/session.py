@@ -1,4 +1,4 @@
-"""Event-driven browser session with backwards compatibility."""
+"""Event-driven browser session."""
 
 import asyncio
 import logging
@@ -25,7 +25,7 @@ from browser_use.browser.cloud.cloud import CloudBrowserAuthError, CloudBrowserC
 
 # CDP logging is now handled by setup_logging() in logging_config.py
 # It automatically sets CDP logs to the same level as browser_use logs
-from browser_use.browser.cloud.views import CloudBrowserParams, CreateBrowserRequest, ProxyCountryCode
+from browser_use.browser.cloud.views import CreateBrowserRequest, ProxyCountryCode
 
 # Sentinel to distinguish "not passed" from "explicitly None" for proxy params.
 # When a user passes proxy_country_code=None, they mean "disable the proxy".
@@ -133,7 +133,7 @@ class ResilientEventBus(EventBus):
 
 
 class BrowserSession(BaseModel):
-	"""Event-driven browser session with backwards compatibility.
+	"""Event-driven browser session.
 
 	This class provides a 2-layer architecture:
 	- High-level event handling for agents/tools
@@ -170,13 +170,8 @@ class BrowserSession(BaseModel):
 		cloud_profile_id: UUID | str | None = None,
 		cloud_proxy_country_code: ProxyCountryCode | None = None,
 		cloud_timeout: int | None = None,
-		# Backward compatibility aliases
-		profile_id: UUID | str | None = None,
-		proxy_country_code: ProxyCountryCode | None = None,
-		timeout: int | None = None,
 		use_cloud: bool | None = None,
-		cloud_browser: bool | None = None,  # Backward compatibility alias
-		cloud_browser_params: CloudBrowserParams | None = None,
+		cloud_browser_params: CreateBrowserRequest | None = None,
 		# Common params that work with cloud
 		id: str | None = None,
 		headers: dict[str, str] | None = None,
@@ -271,10 +266,6 @@ class BrowserSession(BaseModel):
 		cloud_profile_id: UUID | str | None = None,
 		cloud_proxy_country_code: ProxyCountryCode | None = _UNSET,  # type: ignore[assignment]
 		cloud_timeout: int | None = None,
-		# Backward compatibility aliases for cloud params
-		profile_id: UUID | str | None = None,
-		proxy_country_code: ProxyCountryCode | None = _UNSET,  # type: ignore[assignment]
-		timeout: int | None = None,
 		# BrowserProfile fields that can be passed directly
 		# From BrowserConnectArgs
 		headers: dict[str, str] | None = None,
@@ -310,8 +301,7 @@ class BrowserSession(BaseModel):
 		# BrowserProfile specific fields
 		## Cloud Browser Fields
 		use_cloud: bool | None = None,
-		cloud_browser: bool | None = None,  # Backward compatibility alias
-		cloud_browser_params: CloudBrowserParams | None = None,
+		cloud_browser_params: CreateBrowserRequest | None = None,
 		## Other params
 		disable_security: bool | None = None,
 		deterministic_rendering: bool | None = None,
@@ -348,30 +338,21 @@ class BrowserSession(BaseModel):
 			if k
 			not in [
 				'self',
+				'__class__',
 				'browser_profile',
 				'id',
 				'cloud_profile_id',
 				'cloud_proxy_country_code',
 				'cloud_timeout',
-				'profile_id',
-				'proxy_country_code',
-				'timeout',
 			]
 			and v is not None
 			and v is not _UNSET
 		}
 
-		# Handle backward compatibility: prefer cloud_* params over old names.
 		# _UNSET means "not passed" while None means "explicitly disable proxy".
-		final_profile_id = cloud_profile_id if cloud_profile_id is not None else profile_id
-		final_proxy_country_code = (
-			cloud_proxy_country_code
-			if cloud_proxy_country_code is not _UNSET
-			else proxy_country_code
-			if proxy_country_code is not _UNSET
-			else _UNSET
-		)
-		final_timeout = cloud_timeout if cloud_timeout is not None else timeout
+		final_profile_id = cloud_profile_id
+		final_proxy_country_code = cloud_proxy_country_code
+		final_timeout = cloud_timeout
 
 		# If any cloud params are provided, create cloud_browser_params.
 		# Use "is not _UNSET" for proxy so that explicit None (disable proxy) is respected.
@@ -387,10 +368,6 @@ class BrowserSession(BaseModel):
 			profile_kwargs['cloud_browser_params'] = cloud_params
 			profile_kwargs['use_cloud'] = True
 
-		# Handle backward compatibility: map cloud_browser to use_cloud
-		if 'cloud_browser' in profile_kwargs:
-			profile_kwargs['use_cloud'] = profile_kwargs.pop('cloud_browser')
-
 		# If cloud_browser_params is set, force use_cloud=True
 		if cloud_browser_params is not None:
 			profile_kwargs['use_cloud'] = True
@@ -400,7 +377,7 @@ class BrowserSession(BaseModel):
 			profile_kwargs['is_local'] = True
 		# Only set is_local=True when cdp_url is missing if we're not using cloud browser
 		# (cloud browser will provide cdp_url later)
-		use_cloud = profile_kwargs.get('use_cloud') or profile_kwargs.get('cloud_browser')
+		use_cloud = profile_kwargs.get('use_cloud')
 		if not cdp_url and not use_cloud:
 			profile_kwargs['is_local'] = True
 
@@ -529,11 +506,6 @@ class BrowserSession(BaseModel):
 	def is_reconnecting(self) -> bool:
 		"""Whether a WebSocket reconnection attempt is currently in progress."""
 		return self._reconnecting
-
-	@property
-	def cloud_browser(self) -> bool:
-		"""Whether to use cloud browser service from browser profile."""
-		return self.browser_profile.use_cloud
 
 	@property
 	def demo_mode(self) -> 'DemoMode | None':
@@ -771,7 +743,7 @@ class BrowserSession(BaseModel):
 		self.event_bus = ResilientEventBus()
 
 	async def close(self) -> None:
-		"""Alias for stop()."""
+		"""Stop the browser session and release its event resources."""
 		await self.stop()
 
 	async def on_BrowserStartEvent(self, event: BrowserStartEvent) -> dict[str, str]:
@@ -2497,11 +2469,6 @@ class BrowserSession(BaseModel):
 		self._cached_selector_indices = {
 			(str(node.session_id), node.backend_node_id): index for index, node in selector_map.items()
 		}
-
-	# Alias for backwards compatibility
-	async def get_element_by_index(self, index: int) -> EnhancedDOMTreeNode | None:
-		"""Alias for get_dom_element_by_index for backwards compatibility."""
-		return await self.get_dom_element_by_index(index)
 
 	async def get_dom_element_at_coordinates(self, x: int, y: int) -> EnhancedDOMTreeNode | None:
 		"""Get DOM element at coordinates as EnhancedDOMTreeNode.

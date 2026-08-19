@@ -1,189 +1,22 @@
-"""Configuration system for browser-use with automatic migration support."""
+"""Current browser-use environment and profile configuration."""
 
 import json
-import logging
-import os
+from collections.abc import Mapping
 from datetime import datetime
-from functools import cache
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-import psutil
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, PrivateAttr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-logger = logging.getLogger(__name__)
 
-
-@cache
-def is_running_in_docker() -> bool:
-	"""Detect if we are running in a docker container, for the purpose of optimizing chrome launch flags (dev shm usage, gpu settings, etc.)"""
-	try:
-		if Path('/.dockerenv').exists() or 'docker' in Path('/proc/1/cgroup').read_text().lower():
-			return True
-	except Exception:
-		pass
-
-	try:
-		# if init proc (PID 1) looks like uvicorn/python/uv/etc. then we're in Docker
-		# if init proc (PID 1) looks like bash/systemd/init/etc. then we're probably NOT in Docker
-		init_cmd = ' '.join(psutil.Process(1).cmdline())
-		if ('py' in init_cmd) or ('uv' in init_cmd) or ('app' in init_cmd):
-			return True
-	except Exception:
-		pass
-
-	try:
-		# if less than 10 total running procs, then we're almost certainly in a container
-		if len(psutil.pids()) < 10:
-			return True
-	except Exception:
-		pass
-
-	return False
-
-
-class OldConfig:
-	"""Original lazy-loading configuration class for environment variables."""
-
-	# Cache for directory creation tracking
-	_dirs_created = False
-
-	@property
-	def BROWSER_USE_LOGGING_LEVEL(self) -> str:
-		return os.getenv('BROWSER_USE_LOGGING_LEVEL', 'info').lower()
-
-	@property
-	def BROWSER_USE_CLOUD_API_URL(self) -> str:
-		url = os.getenv('BROWSER_USE_CLOUD_API_URL', 'https://api.browser-use.com')
-		assert '://' in url, 'BROWSER_USE_CLOUD_API_URL must be a valid URL'
-		return url
-
-	@property
-	def BROWSER_USE_CLOUD_UI_URL(self) -> str:
-		url = os.getenv('BROWSER_USE_CLOUD_UI_URL', '')
-		# Allow empty string as default, only validate if set
-		if url and '://' not in url:
-			raise AssertionError('BROWSER_USE_CLOUD_UI_URL must be a valid URL if set')
-		return url
-
-	@property
-	def BROWSER_USE_MODEL_PRICING_URL(self) -> str:
-		url = os.getenv('BROWSER_USE_MODEL_PRICING_URL', '')
-		if url and '://' not in url:
-			raise AssertionError('BROWSER_USE_MODEL_PRICING_URL must be a valid URL if set')
-		return url
-
-	# Path configuration
-	@property
-	def XDG_CACHE_HOME(self) -> Path:
-		return Path(os.getenv('XDG_CACHE_HOME', '~/.cache')).expanduser().resolve()
-
-	@property
-	def XDG_CONFIG_HOME(self) -> Path:
-		return Path(os.getenv('XDG_CONFIG_HOME', '~/.config')).expanduser().resolve()
-
-	@property
-	def BROWSER_USE_CONFIG_DIR(self) -> Path:
-		path = Path(os.getenv('BROWSER_USE_CONFIG_DIR', str(self.XDG_CONFIG_HOME / 'browseruse'))).expanduser().resolve()
-		self._ensure_dirs()
-		return path
-
-	@property
-	def BROWSER_USE_CONFIG_FILE(self) -> Path:
-		return self.BROWSER_USE_CONFIG_DIR / 'config.json'
-
-	@property
-	def BROWSER_USE_PROFILES_DIR(self) -> Path:
-		path = self.BROWSER_USE_CONFIG_DIR / 'profiles'
-		self._ensure_dirs()
-		return path
-
-	@property
-	def BROWSER_USE_DEFAULT_USER_DATA_DIR(self) -> Path:
-		return self.BROWSER_USE_PROFILES_DIR / 'default'
-
-	@property
-	def BROWSER_USE_EXTENSIONS_DIR(self) -> Path:
-		path = self.BROWSER_USE_CONFIG_DIR / 'extensions'
-		self._ensure_dirs()
-		return path
-
-	def _ensure_dirs(self) -> None:
-		"""Create directories if they don't exist (only once)"""
-		if not self._dirs_created:
-			config_dir = (
-				Path(os.getenv('BROWSER_USE_CONFIG_DIR', str(self.XDG_CONFIG_HOME / 'browseruse'))).expanduser().resolve()
-			)
-			config_dir.mkdir(parents=True, exist_ok=True)
-			(config_dir / 'profiles').mkdir(parents=True, exist_ok=True)
-			(config_dir / 'extensions').mkdir(parents=True, exist_ok=True)
-			self._dirs_created = True
-
-	# LLM API key configuration
-	@property
-	def OPENAI_API_KEY(self) -> str:
-		return os.getenv('OPENAI_API_KEY', '')
-
-	@property
-	def ANTHROPIC_API_KEY(self) -> str:
-		return os.getenv('ANTHROPIC_API_KEY', '')
-
-	@property
-	def GOOGLE_API_KEY(self) -> str:
-		return os.getenv('GOOGLE_API_KEY', '')
-
-	@property
-	def DEEPSEEK_API_KEY(self) -> str:
-		return os.getenv('DEEPSEEK_API_KEY', '')
-
-	@property
-	def GROK_API_KEY(self) -> str:
-		return os.getenv('GROK_API_KEY', '')
-
-	@property
-	def NOVITA_API_KEY(self) -> str:
-		return os.getenv('NOVITA_API_KEY', '')
-
-	@property
-	def AZURE_OPENAI_ENDPOINT(self) -> str:
-		return os.getenv('AZURE_OPENAI_ENDPOINT', '')
-
-	@property
-	def AZURE_OPENAI_KEY(self) -> str:
-		return os.getenv('AZURE_OPENAI_KEY', '')
-
-	@property
-	def SKIP_LLM_API_KEY_VERIFICATION(self) -> bool:
-		return os.getenv('SKIP_LLM_API_KEY_VERIFICATION', 'false').lower()[:1] in 'ty1'
-
-	@property
-	def DEFAULT_LLM(self) -> str:
-		return os.getenv('DEFAULT_LLM', '')
-
-	# Runtime hints
-	@property
-	def IN_DOCKER(self) -> bool:
-		return os.getenv('IN_DOCKER', 'false').lower()[:1] in 'ty1' or is_running_in_docker()
-
-	@property
-	def IS_IN_EVALS(self) -> bool:
-		return os.getenv('IS_IN_EVALS', 'false').lower()[:1] in 'ty1'
-
-	@property
-	def BROWSER_USE_VERSION_CHECK(self) -> bool:
-		return os.getenv('BROWSER_USE_VERSION_CHECK', 'true').lower()[:1] in 'ty1'
-
-	@property
-	def WIN_FONT_DIR(self) -> str:
-		return os.getenv('WIN_FONT_DIR', 'C:\\Windows\\Fonts')
-
-
-class FlatEnvConfig(BaseSettings):
-	"""All environment variables in a flat namespace."""
+class EnvironmentConfig(BaseSettings):
+	"""Typed view of the current browser-use environment configuration."""
 
 	model_config = SettingsConfigDict(env_file='.env', env_file_encoding='utf-8', case_sensitive=True, extra='allow')
+
+	_dirs_created: bool = PrivateAttr(default=False)
 
 	# Logging
 	BROWSER_USE_LOGGING_LEVEL: str = Field(default='info')
@@ -198,6 +31,7 @@ class FlatEnvConfig(BaseSettings):
 	XDG_CACHE_HOME: str = Field(default='~/.cache')
 	XDG_CONFIG_HOME: str = Field(default='~/.config')
 	BROWSER_USE_CONFIG_DIR: str | None = Field(default=None)
+	BROWSER_USE_CONFIG_PATH: str | None = Field(default=None)
 
 	# LLM API keys
 	OPENAI_API_KEY: str = Field(default='')
@@ -212,25 +46,82 @@ class FlatEnvConfig(BaseSettings):
 	DEFAULT_LLM: str = Field(default='')
 
 	# Runtime hints
-	IN_DOCKER: bool | None = Field(default=None)
+	IN_DOCKER: bool = Field(default=False)
 	IS_IN_EVALS: bool = Field(default=False)
 	WIN_FONT_DIR: str = Field(default='C:\\Windows\\Fonts')
 	BROWSER_USE_VERSION_CHECK: bool = Field(default=True)
 
-	# MCP-specific env vars
-	BROWSER_USE_CONFIG_PATH: str | None = Field(default=None)
+	# MCP-specific environment variables
 	BROWSER_USE_HEADLESS: bool | None = Field(default=None)
 	BROWSER_USE_ALLOWED_DOMAINS: str | None = Field(default=None)
 	BROWSER_USE_LLM_MODEL: str | None = Field(default=None)
 
-	# Proxy env vars
+	# Proxy environment variables
 	BROWSER_USE_PROXY_URL: str | None = Field(default=None)
 	BROWSER_USE_NO_PROXY: str | None = Field(default=None)
 	BROWSER_USE_PROXY_USERNAME: str | None = Field(default=None)
 	BROWSER_USE_PROXY_PASSWORD: str | None = Field(default=None)
 
-	# Extension env vars
+	# Extension environment variables
 	BROWSER_USE_DISABLE_EXTENSIONS: bool | None = Field(default=None)
+
+	@field_validator('BROWSER_USE_CLOUD_API_URL', 'BROWSER_USE_CLOUD_UI_URL', 'BROWSER_USE_MODEL_PRICING_URL')
+	@classmethod
+	def validate_url(cls, value: str) -> str:
+		if value and '://' not in value:
+			raise ValueError('configuration URL must include a scheme')
+		return value
+
+	@property
+	def logging_level(self) -> str:
+		return self.BROWSER_USE_LOGGING_LEVEL.lower()
+
+	@property
+	def cache_home(self) -> Path:
+		return Path(self.XDG_CACHE_HOME).expanduser().resolve()
+
+	@property
+	def config_home(self) -> Path:
+		return Path(self.XDG_CONFIG_HOME).expanduser().resolve()
+
+	@property
+	def config_dir(self) -> Path:
+		path = Path(self.BROWSER_USE_CONFIG_DIR or self.config_home / 'browseruse').expanduser().resolve()
+		self._ensure_dirs(path)
+		return path
+
+	@property
+	def config_path(self) -> Path:
+		if self.BROWSER_USE_CONFIG_PATH:
+			return Path(self.BROWSER_USE_CONFIG_PATH).expanduser()
+		return self.config_dir / 'config.json'
+
+	@property
+	def profiles_dir(self) -> Path:
+		self._ensure_dirs(self.config_dir)
+		return self.config_dir / 'profiles'
+
+	@property
+	def default_user_data_dir(self) -> Path:
+		return self.profiles_dir / 'default'
+
+	@property
+	def extensions_dir(self) -> Path:
+		self._ensure_dirs(self.config_dir)
+		return self.config_dir / 'extensions'
+
+	def _ensure_dirs(self, config_dir: Path) -> None:
+		if self._dirs_created:
+			return
+		config_dir.mkdir(parents=True, exist_ok=True)
+		(config_dir / 'profiles').mkdir(parents=True, exist_ok=True)
+		(config_dir / 'extensions').mkdir(parents=True, exist_ok=True)
+		self._dirs_created = True
+
+
+def get_environment_config() -> EnvironmentConfig:
+	"""Read a fresh environment configuration."""
+	return EnvironmentConfig()
 
 
 class DBStyleEntry(BaseModel):
@@ -242,15 +133,35 @@ class DBStyleEntry(BaseModel):
 
 
 class BrowserProfileEntry(DBStyleEntry):
-	"""Browser profile configuration entry - accepts any BrowserProfile fields."""
+	"""Browser profile configuration entry."""
 
 	model_config = ConfigDict(extra='allow')
 
-	# Common browser profile fields for reference
 	headless: bool | None = None
 	user_data_dir: str | None = None
 	allowed_domains: list[str] | None = None
 	downloads_path: str | None = None
+
+	@model_validator(mode='before')
+	@classmethod
+	def reject_unknown_profile_fields(cls, value: Any) -> Any:
+		if not isinstance(value, Mapping):
+			return value
+
+		from browser_use.browser.profile import BrowserProfile
+
+		accepted_names = set(BrowserProfile.model_fields)
+		for field in BrowserProfile.model_fields.values():
+			validation_alias = field.validation_alias
+			if isinstance(validation_alias, str):
+				accepted_names.add(validation_alias)
+			elif isinstance(validation_alias, AliasChoices):
+				accepted_names.update(choice for choice in validation_alias.choices if isinstance(choice, str))
+
+		unknown_names = set(value) - accepted_names - set(DBStyleEntry.model_fields)
+		if unknown_names:
+			raise ValueError(f'Unknown browser profile fields: {", ".join(sorted(unknown_names))}')
+		return value
 
 
 class LLMEntry(DBStyleEntry):
@@ -271,245 +182,102 @@ class AgentEntry(DBStyleEntry):
 
 
 class DBStyleConfigJSON(BaseModel):
-	"""New database-style configuration format."""
+	"""Current database-style configuration format."""
 
-	browser_profile: dict[str, BrowserProfileEntry] = Field(default_factory=dict)
-	llm: dict[str, LLMEntry] = Field(default_factory=dict)
-	agent: dict[str, AgentEntry] = Field(default_factory=dict)
+	model_config = ConfigDict(extra='forbid')
+
+	browser_profile: dict[str, BrowserProfileEntry]
+	llm: dict[str, LLMEntry]
+	agent: dict[str, AgentEntry]
 
 
 def create_default_config() -> DBStyleConfigJSON:
 	"""Create a fresh default configuration."""
-	logger.debug('Creating fresh default config.json')
+	new_config = DBStyleConfigJSON(browser_profile={}, llm={}, agent={})
 
-	new_config = DBStyleConfigJSON()
-
-	# Generate default IDs
 	profile_id = str(uuid4())
 	llm_id = str(uuid4())
 	agent_id = str(uuid4())
 
-	# Create default browser profile entry
 	new_config.browser_profile[profile_id] = BrowserProfileEntry(id=profile_id, default=True, headless=False, user_data_dir=None)
-
-	# Create default LLM entry
 	new_config.llm[llm_id] = LLMEntry(id=llm_id, default=True, model='gpt-4.1-mini', api_key='your-openai-api-key-here')
-
-	# Create default agent entry
 	new_config.agent[agent_id] = AgentEntry(id=agent_id, default=True)
 
 	return new_config
 
 
-def load_and_migrate_config(config_path: Path) -> DBStyleConfigJSON:
-	"""Load config.json or create fresh one if old format detected."""
+def load_config_file(config_path: Path | None = None) -> DBStyleConfigJSON:
+	"""Load the current configuration, creating it only when absent."""
+	if config_path is None:
+		config_path = get_environment_config().config_path
 	if not config_path.exists():
-		# Create fresh config with defaults
 		config_path.parent.mkdir(parents=True, exist_ok=True)
 		new_config = create_default_config()
-		with open(config_path, 'w') as f:
-			json.dump(new_config.model_dump(), f, indent=2)
+		with config_path.open('w', encoding='utf-8') as config_file:
+			json.dump(new_config.model_dump(), config_file, indent=2)
 		return new_config
 
 	try:
-		with open(config_path) as f:
-			data = json.load(f)
-
-		# Check if it's already in DB-style format
-		if all(key in data for key in ['browser_profile', 'llm', 'agent']) and all(
-			isinstance(data.get(key, {}), dict) for key in ['browser_profile', 'llm', 'agent']
-		):
-			# Check if the values are DB-style entries (have UUIDs as keys)
-			if data.get('browser_profile') and all(isinstance(v, dict) and 'id' in v for v in data['browser_profile'].values()):
-				# Already in new format
-				return DBStyleConfigJSON(**data)
-
-		# Old format detected - delete it and create fresh config
-		logger.debug(f'Old config format detected at {config_path}, creating fresh config')
-		new_config = create_default_config()
-
-		# Overwrite with new config
-		with open(config_path, 'w') as f:
-			json.dump(new_config.model_dump(), f, indent=2)
-
-		logger.debug(f'Created fresh config.json at {config_path}')
-		return new_config
-
-	except Exception as e:
-		logger.error(f'Failed to load config from {config_path}: {e}, creating fresh config')
-		# On any error, create fresh config
-		new_config = create_default_config()
-		try:
-			with open(config_path, 'w') as f:
-				json.dump(new_config.model_dump(), f, indent=2)
-		except Exception as write_error:
-			logger.error(f'Failed to write fresh config: {write_error}')
-		return new_config
+		with config_path.open(encoding='utf-8') as config_file:
+			data = json.load(config_file)
+		return DBStyleConfigJSON.model_validate(data)
+	except Exception as exc:
+		raise ValueError(f'Failed to load current configuration from {config_path}: {exc}') from exc
 
 
-class Config:
-	"""Backward-compatible configuration class that merges all config sources.
-
-	Re-reads environment variables on every access to maintain compatibility.
-	"""
-
-	def __init__(self):
-		# Cache for directory creation tracking only
-		self._dirs_created = False
-
-	def __getattr__(self, name: str) -> Any:
-		"""Dynamically proxy all attributes to fresh instances.
-
-		This ensures env vars are re-read on every access.
-		"""
-		# Special handling for internal attributes
-		if name.startswith('_'):
-			raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
-
-		# Create fresh instances on every access
-		old_config = OldConfig()
-
-		# Always use old config for all attributes (it handles env vars with proper transformations)
-		if hasattr(old_config, name):
-			return getattr(old_config, name)
-
-		# For new MCP-specific attributes not in old config
-		env_config = FlatEnvConfig()
-		if hasattr(env_config, name):
-			return getattr(env_config, name)
-
-		# Handle special methods
-		if name == 'get_default_profile':
-			return lambda: self._get_default_profile()
-		elif name == 'get_default_llm':
-			return lambda: self._get_default_llm()
-		elif name == 'get_default_agent':
-			return lambda: self._get_default_agent()
-		elif name == 'load_config':
-			return lambda: self._load_config()
-		elif name == '_ensure_dirs':
-			return lambda: old_config._ensure_dirs()
-
-		raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
-
-	def _get_config_path(self) -> Path:
-		"""Get config path from fresh env config."""
-		env_config = FlatEnvConfig()
-		if env_config.BROWSER_USE_CONFIG_PATH:
-			return Path(env_config.BROWSER_USE_CONFIG_PATH).expanduser()
-		elif env_config.BROWSER_USE_CONFIG_DIR:
-			return Path(env_config.BROWSER_USE_CONFIG_DIR).expanduser() / 'config.json'
-		else:
-			xdg_config = Path(env_config.XDG_CONFIG_HOME).expanduser()
-			return xdg_config / 'browseruse' / 'config.json'
-
-	def _get_db_config(self) -> DBStyleConfigJSON:
-		"""Load and migrate config.json."""
-		config_path = self._get_config_path()
-		return load_and_migrate_config(config_path)
-
-	def _get_default_profile(self) -> dict[str, Any]:
-		"""Get the default browser profile configuration."""
-		db_config = self._get_db_config()
-		for profile in db_config.browser_profile.values():
-			if profile.default:
-				return profile.model_dump(exclude_none=True)
-
-		# Return first profile if no default
-		if db_config.browser_profile:
-			return next(iter(db_config.browser_profile.values())).model_dump(exclude_none=True)
-
-		return {}
-
-	def _get_default_llm(self) -> dict[str, Any]:
-		"""Get the default LLM configuration."""
-		db_config = self._get_db_config()
-		for llm in db_config.llm.values():
-			if llm.default:
-				return llm.model_dump(exclude_none=True)
-
-		# Return first LLM if no default
-		if db_config.llm:
-			return next(iter(db_config.llm.values())).model_dump(exclude_none=True)
-
-		return {}
-
-	def _get_default_agent(self) -> dict[str, Any]:
-		"""Get the default agent configuration."""
-		db_config = self._get_db_config()
-		for agent in db_config.agent.values():
-			if agent.default:
-				return agent.model_dump(exclude_none=True)
-
-		# Return first agent if no default
-		if db_config.agent:
-			return next(iter(db_config.agent.values())).model_dump(exclude_none=True)
-
-		return {}
-
-	def _load_config(self) -> dict[str, Any]:
-		"""Load configuration with env var overrides for MCP components."""
-		config = {
-			'browser_profile': self._get_default_profile(),
-			'llm': self._get_default_llm(),
-			'agent': self._get_default_agent(),
-		}
-
-		# Fresh env config for overrides
-		env_config = FlatEnvConfig()
-
-		# Apply MCP-specific env var overrides
-		if env_config.BROWSER_USE_HEADLESS is not None:
-			config['browser_profile']['headless'] = env_config.BROWSER_USE_HEADLESS
-
-		if env_config.BROWSER_USE_ALLOWED_DOMAINS:
-			domains = [d.strip() for d in env_config.BROWSER_USE_ALLOWED_DOMAINS.split(',') if d.strip()]
-			config['browser_profile']['allowed_domains'] = domains
-
-		# Proxy settings (Chromium) -> consolidated `proxy` dict
-		proxy_dict: dict[str, Any] = {}
-		if env_config.BROWSER_USE_PROXY_URL:
-			proxy_dict['server'] = env_config.BROWSER_USE_PROXY_URL
-		if env_config.BROWSER_USE_NO_PROXY:
-			# store bypass as comma-separated string to match Chrome flag
-			proxy_dict['bypass'] = ','.join([d.strip() for d in env_config.BROWSER_USE_NO_PROXY.split(',') if d.strip()])
-		if env_config.BROWSER_USE_PROXY_USERNAME:
-			proxy_dict['username'] = env_config.BROWSER_USE_PROXY_USERNAME
-		if env_config.BROWSER_USE_PROXY_PASSWORD:
-			proxy_dict['password'] = env_config.BROWSER_USE_PROXY_PASSWORD
-		if proxy_dict:
-			# ensure section exists
-			config.setdefault('browser_profile', {})
-			config['browser_profile']['proxy'] = proxy_dict
-
-		if env_config.OPENAI_API_KEY:
-			config['llm']['api_key'] = env_config.OPENAI_API_KEY
-
-		if env_config.BROWSER_USE_LLM_MODEL:
-			config['llm']['model'] = env_config.BROWSER_USE_LLM_MODEL
-
-		# Extension settings
-		if env_config.BROWSER_USE_DISABLE_EXTENSIONS is not None:
-			config['browser_profile']['enable_default_extensions'] = not env_config.BROWSER_USE_DISABLE_EXTENSIONS
-
-		return config
+def _default_entry(entries: Mapping[str, DBStyleEntry]) -> dict[str, Any]:
+	for entry in entries.values():
+		if entry.default:
+			return entry.model_dump(exclude_none=True, exclude=set(DBStyleEntry.model_fields))
+	if entries:
+		return next(iter(entries.values())).model_dump(exclude_none=True, exclude=set(DBStyleEntry.model_fields))
+	return {}
 
 
-# Create singleton instance
-CONFIG = Config()
-
-
-# Helper functions for MCP components
 def load_browser_use_config() -> dict[str, Any]:
-	"""Load browser-use configuration for MCP components."""
-	return CONFIG.load_config()
+	"""Load current configuration with MCP environment overrides."""
+	settings = get_environment_config()
+	db_config = load_config_file(settings.config_path)
+	config: dict[str, Any] = {
+		'browser_profile': _default_entry(db_config.browser_profile),
+		'llm': _default_entry(db_config.llm),
+		'agent': _default_entry(db_config.agent),
+	}
+
+	if settings.BROWSER_USE_HEADLESS is not None:
+		config['browser_profile']['headless'] = settings.BROWSER_USE_HEADLESS
+
+	if settings.BROWSER_USE_ALLOWED_DOMAINS:
+		domains = [domain.strip() for domain in settings.BROWSER_USE_ALLOWED_DOMAINS.split(',') if domain.strip()]
+		config['browser_profile']['allowed_domains'] = domains
+
+	proxy: dict[str, Any] = {}
+	if settings.BROWSER_USE_PROXY_URL:
+		proxy['server'] = settings.BROWSER_USE_PROXY_URL
+	if settings.BROWSER_USE_NO_PROXY:
+		proxy['bypass'] = ','.join(domain.strip() for domain in settings.BROWSER_USE_NO_PROXY.split(',') if domain.strip())
+	if settings.BROWSER_USE_PROXY_USERNAME:
+		proxy['username'] = settings.BROWSER_USE_PROXY_USERNAME
+	if settings.BROWSER_USE_PROXY_PASSWORD:
+		proxy['password'] = settings.BROWSER_USE_PROXY_PASSWORD
+	if proxy:
+		config['browser_profile']['proxy'] = proxy
+
+	if settings.OPENAI_API_KEY:
+		config['llm']['api_key'] = settings.OPENAI_API_KEY
+	if settings.BROWSER_USE_LLM_MODEL:
+		config['llm']['model'] = settings.BROWSER_USE_LLM_MODEL
+	if settings.BROWSER_USE_DISABLE_EXTENSIONS is not None:
+		config['browser_profile']['enable_default_extensions'] = not settings.BROWSER_USE_DISABLE_EXTENSIONS
+
+	return config
 
 
 def get_default_profile(config: dict[str, Any]) -> dict[str, Any]:
-	"""Get default browser profile from config dict."""
+	"""Get the default browser profile from a loaded configuration."""
 	return config.get('browser_profile', {})
 
 
 def get_default_llm(config: dict[str, Any]) -> dict[str, Any]:
-	"""Get default LLM config from config dict."""
+	"""Get the default LLM configuration from a loaded configuration."""
 	return config.get('llm', {})

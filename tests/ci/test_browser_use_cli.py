@@ -37,12 +37,3 @@ def test_normalize_captured_cli_output_handles_string_system_exit(capsys):
 	captured = capsys.readouterr()
 	assert captured.out == ''
 	assert captured.err == 'browser-use failed\n'
-
-
-def test_browser_use_tui_is_deprecated_alias(monkeypatch, capsys):
-	import browser_use.cli as browser_use_cli
-
-	monkeypatch.setattr(browser_use_cli, 'main', lambda: 0)
-
-	assert browser_use_cli.browser_use_tui_main() == 0
-	assert capsys.readouterr().err == 'browser-use-tui is deprecated; use browser-use instead.\n'

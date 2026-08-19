@@ -381,9 +381,9 @@ class MessageManager:
 		else:
 			history_item = HistoryItem(
 				step_number=step_number,
-				evaluation_previous_goal=model_output.current_state.evaluation_previous_goal,
-				memory=model_output.current_state.memory,
-				next_goal=model_output.current_state.next_goal,
+				evaluation_previous_goal=model_output.evaluation_previous_goal or '',
+				memory=model_output.memory or '',
+				next_goal=model_output.next_goal or '',
 				action_results=action_results,
 			)
 			self.state.agent_history_items.append(history_item)

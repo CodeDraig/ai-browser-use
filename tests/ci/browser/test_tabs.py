@@ -207,7 +207,7 @@ class TestMultiTabOperations:
 		agent = Agent(
 			task=f'Navigate to {base_url}/home, then open {base_url}/page1 and {base_url}/page2 in new tabs, then switch back to the first tab',
 			llm=mock_llm,
-			browser_session=browser_session,
+			browser=browser_session,
 		)
 
 		# Run with timeout - should complete within 2 minutes
@@ -318,7 +318,7 @@ class TestMultiTabOperations:
 		agent = Agent(
 			task=f'Navigate to {base_url}/home, then open {base_url}/page1 in a new tab, then close the page1 tab',
 			llm=mock_llm,
-			browser_session=browser_session,
+			browser=browser_session,
 			use_vision=True,  # Enable vision for this test
 		)
 
@@ -397,7 +397,7 @@ class TestMultiTabOperations:
 		agent = Agent(
 			task=f'Navigate to {base_url}/home and open {base_url}/page1 in a new tab',
 			llm=mock_llm,
-			browser_session=browser_session,
+			browser=browser_session,
 		)
 
 		# Run with timeout - this tests if browser state times out when new tabs open
@@ -525,7 +525,7 @@ class TestMultiTabOperations:
 		agent = Agent(
 			task='Open multiple tabs rapidly and verify browser state remains accessible',
 			llm=mock_llm,
-			browser_session=browser_session,
+			browser=browser_session,
 		)
 
 		# Run with timeout - should complete within 2 minutes
@@ -655,7 +655,7 @@ class TestMultiTabOperations:
 		agent = Agent(
 			task='Create 3 tabs, switch to the second one, then close it',
 			llm=mock_llm,
-			browser_session=browser_session,
+			browser=browser_session,
 		)
 
 		# Run with timeout - should complete within 2 minutes

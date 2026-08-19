@@ -306,7 +306,7 @@ class TestGetDropdownOptionsEvent:
 		assert 'Use the exact text string' in result.extracted_content and 'select_dropdown' in result.extracted_content
 
 		# Also test direct event dispatch
-		node = await browser_session.get_element_by_index(dropdown_index)
+		node = await browser_session.get_dom_element_by_index(dropdown_index)
 		assert node is not None
 		event = browser_session.event_bus.dispatch(GetDropdownOptionsEvent(node=node))
 		dropdown_data = await event.event_result(timeout=3.0)
@@ -345,7 +345,7 @@ class TestGetDropdownOptionsEvent:
 			assert option in result.extracted_content, f"Option '{option}' not found in result content"
 
 		# Also test direct event dispatch
-		node = await browser_session.get_element_by_index(menu_index)
+		node = await browser_session.get_dom_element_by_index(menu_index)
 		assert node is not None
 		event = browser_session.event_bus.dispatch(GetDropdownOptionsEvent(node=node))
 		dropdown_data = await event.event_result(timeout=3.0)
@@ -384,7 +384,7 @@ class TestGetDropdownOptionsEvent:
 			assert option in result.extracted_content, f"Option '{option}' not found in result content"
 
 		# Also test direct event dispatch
-		node = await browser_session.get_element_by_index(dropdown_index)
+		node = await browser_session.get_dom_element_by_index(dropdown_index)
 		assert node is not None
 		event = browser_session.event_bus.dispatch(GetDropdownOptionsEvent(node=node))
 		dropdown_data = await event.event_result(timeout=3.0)
@@ -524,7 +524,7 @@ class TestSelectDropdownOptionEvent:
 		assert dropdown_index is not None
 
 		# Try to select non-existent option via direct event
-		node = await browser_session.get_element_by_index(dropdown_index)
+		node = await browser_session.get_dom_element_by_index(dropdown_index)
 		assert node is not None
 		event = browser_session.event_bus.dispatch(SelectDropdownOptionEvent(node=node, text='Non-existent Option'))
 

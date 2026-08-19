@@ -34,7 +34,7 @@ setup_environment(args.debug)
 from browser_use import Agent, BrowserSession
 from browser_use.llm.google import ChatGoogle
 
-GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY') or os.getenv('GEMINI_API_KEY')
+GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY')
 
 USER_DATA_DIR = Path.home() / '.config' / 'whatsapp_scheduler' / 'browser_profile'
 USER_DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -137,7 +137,7 @@ async def send_message(contact, message):
 		storage_state=str(STORAGE_STATE_FILE) if STORAGE_STATE_FILE.exists() else None,
 	)
 
-	agent = Agent(task=task, llm=llm, browser_session=browser)
+	agent = Agent(task=task, llm=llm, browser=browser)
 	await agent.run()
 	print(f'✅ Sent to {contact}')
 
@@ -166,7 +166,7 @@ async def auto_respond_to_unread():
 		storage_state=str(STORAGE_STATE_FILE) if STORAGE_STATE_FILE.exists() else None,
 	)
 
-	agent = Agent(task=task, llm=llm, browser_session=browser)
+	agent = Agent(task=task, llm=llm, browser=browser)
 	result = await agent.run()
 	print('✅ Auto-response complete')
 	return result
@@ -174,7 +174,7 @@ async def auto_respond_to_unread():
 
 async def main():
 	if not GOOGLE_API_KEY:
-		print('❌ Set GOOGLE_API_KEY or GEMINI_API_KEY environment variable')
+		print('❌ Set the GOOGLE_API_KEY environment variable')
 		return
 
 	print('WhatsApp Scheduler')

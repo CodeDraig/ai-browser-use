@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 
 from browser_use.agent.views import AgentHistoryList
 from browser_use.browser.views import PLACEHOLDER_4PX_SCREENSHOT
-from browser_use.config import CONFIG
+from browser_use.config import get_environment_config
 
 if TYPE_CHECKING:
 	from PIL import Image, ImageFont
@@ -105,7 +105,7 @@ def create_history_gif(
 			try:
 				if platform.system() == 'Windows':
 					# Need to specify the abs font path on Windows
-					font_name = os.path.join(CONFIG.WIN_FONT_DIR, font_name + '.ttf')
+					font_name = os.path.join(get_environment_config().WIN_FONT_DIR, font_name + '.ttf')
 				regular_font = ImageFont.truetype(font_name, font_size)
 				title_font = ImageFont.truetype(font_name, title_font_size)
 				font_loaded = True
@@ -182,7 +182,7 @@ def create_history_gif(
 			overlay = _add_overlay_to_image(
 				image=image,
 				step_number=i,
-				goal_text=item.model_output.current_state.next_goal,
+				goal_text=item.model_output.next_goal or '',
 				regular_font=regular_font,  # type: ignore
 				title_font=title_font,  # type: ignore
 				margin=margin,

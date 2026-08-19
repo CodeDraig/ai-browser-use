@@ -158,19 +158,3 @@ class Utils:
 
 		# Fallback: use the key name as code, no virtual key code
 		return (key, None)
-
-
-# Backward compatibility: provide standalone function
-def get_key_info(key: str) -> tuple[str, int | None]:
-	"""Get the code and windowsVirtualKeyCode for a key.
-
-	Args:
-		key: Key name (e.g., 'Enter', 'ArrowUp', 'a', 'A')
-
-	Returns:
-		Tuple of (code, windowsVirtualKeyCode)
-
-	Reference: Windows Virtual Key Codes
-	https://docs.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes
-	"""
-	return Utils.get_key_info(key)

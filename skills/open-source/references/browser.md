@@ -23,7 +23,7 @@ agent = Agent(task='Search for Browser Use', browser=browser, llm=ChatBrowserUse
 await agent.run()
 ```
 
-`Browser` is an alias for `BrowserSession` — same class.
+`Browser` is the preferred package-root name for the `BrowserSession` implementation.
 
 ## All Parameters
 

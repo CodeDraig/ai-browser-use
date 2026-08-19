@@ -107,9 +107,6 @@ async def _get_enhanced_dom_tree_from_browser_session(browser_session: 'BrowserS
 	return enhanced_dom_tree
 
 
-# Legacy aliases removed - all code now uses the unified extract_clean_markdown function
-
-
 def convert_html_to_markdown(page_html: str, extract_images: bool = False) -> tuple[str, int, int]:
 	"""Convert serialized page HTML to filtered markdown.
 

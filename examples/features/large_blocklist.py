@@ -95,7 +95,7 @@ async def main():
 	agent = Agent(
 		task=task,
 		llm=llm,
-		browser_session=browser_session,
+		browser=browser_session,
 	)
 
 	print(f'\n🤖 Agent task: Try to visit {blocked_site} (blocked) and {safe_site} (allowed)')
