@@ -10,6 +10,9 @@ the read-only set: it dispatches the `extract` action through `Tools.act()`
 with a FileSystem handle and can write extraction artifacts.
 """
 
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
 import mcp.types as types
 import pytest
 
@@ -73,3 +76,16 @@ async def test_mutating_tools_never_advertise_read_only_hint(server: BrowserUseS
 
 	mislabeled = sorted(tool.name for tool in tools if tool.name not in EXPECTED_READ_ONLY_TOOLS and _is_read_only(tool))
 	assert not mislabeled, f'state-changing tools wrongly advertise readOnlyHint=True: {mislabeled}'
+
+
+async def test_close_browser_destroys_owned_resources(server: BrowserUseServer) -> None:
+	"""The MCP close command means process closure, not a preserved disconnect."""
+	browser_session = SimpleNamespace(kill=AsyncMock(), stop=AsyncMock())
+	server.browser_session = browser_session  # type: ignore[assignment]
+	server.tools = SimpleNamespace()  # type: ignore[assignment]
+
+	assert await server._close_browser() == 'Browser closed'
+	browser_session.kill.assert_awaited_once_with()
+	browser_session.stop.assert_not_awaited()
+	assert server.browser_session is None
+	assert server.tools is None

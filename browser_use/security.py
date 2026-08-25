@@ -1,7 +1,10 @@
+import ipaddress
 import logging
 import re
+import socket
+import unicodedata
 from fnmatch import fnmatch
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 SensitiveData = dict[str, dict[str, str]]
 
@@ -32,6 +35,86 @@ def redact_sensitive_string(value: str, sensitive_values: dict[str, str]) -> str
 def is_new_tab_page(url: str) -> bool:
 	"""Return whether a URL is one of Chromium's supported new-tab pages."""
 	return url in ('about:blank', 'chrome://new-tab-page/', 'chrome://new-tab-page', 'chrome://newtab/', 'chrome://newtab')
+
+
+def is_ip_address(host: str) -> bool:
+	"""Return whether ``host`` is an IPv4 or IPv6 spelling Chromium can resolve."""
+	bare = host.strip('[]')
+	try:
+		bare = unquote(bare)
+	except Exception:
+		pass
+	try:
+		bare = unicodedata.normalize('NFKC', bare)
+	except Exception:
+		pass
+	# IDNA label separators NFKC misses (U+3002, U+FF61 -> U+3002).
+	bare = bare.replace('。', '.').replace('｡', '.')
+
+	try:
+		ipaddress.ip_address(bare)
+		return True
+	except Exception:
+		pass
+
+	# Chromium and the kernel resolver also accept decimal, hex, octal, and
+	# short-form IPv4 spellings. inet_aton mirrors those legacy forms.
+	try:
+		socket.inet_aton(bare)
+		return True
+	except Exception:
+		return False
+
+
+def url_policy_configured(
+	*,
+	allowed_domains: list[str] | set[str] | None,
+	prohibited_domains: list[str] | set[str] | None,
+	block_ip_addresses: bool,
+) -> bool:
+	"""Return whether browser navigation needs active URL-policy enforcement."""
+	return bool(allowed_domains or prohibited_domains or block_ip_addresses)
+
+
+def is_url_allowed_by_policy(
+	url: str,
+	*,
+	allowed_domains: list[str] | set[str] | None,
+	prohibited_domains: list[str] | set[str] | None,
+	block_ip_addresses: bool,
+	log_warnings: bool = False,
+) -> bool:
+	"""Evaluate one URL using the browser profile's navigation policy."""
+	if is_new_tab_page(url):
+		return True
+
+	try:
+		parsed = urlparse(url)
+	except Exception:
+		return False
+
+	# These URLs do not address a network host and are intentionally supported
+	# by the existing browser policy contract.
+	if parsed.scheme in ('data', 'blob'):
+		return True
+
+	host = parsed.hostname
+	if not host:
+		return False
+
+	if block_ip_addresses and is_ip_address(host):
+		return False
+
+	if not allowed_domains and not prohibited_domains:
+		return True
+
+	if allowed_domains:
+		return any(match_url_with_domain_pattern(url, pattern, log_warnings) for pattern in allowed_domains)
+
+	if prohibited_domains:
+		return not any(match_url_with_domain_pattern(url, pattern, log_warnings) for pattern in prohibited_domains)
+
+	return True
 
 
 def _split_domain_pattern(domain_pattern: str) -> tuple[str, str, bool]:

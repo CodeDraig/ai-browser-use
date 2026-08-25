@@ -257,3 +257,25 @@ class TestBrowserSessionCloudIntegration:
 		# Provide CDP URL to avoid actual connection attempts
 		session = BrowserSession(browser_profile=profile, cdp_url='ws://mock-url')
 		assert session.browser_profile.use_cloud is True
+
+	def test_profile_normalization_preserves_precedence_and_inference(self):
+		profile = BrowserProfile(headless=False, use_cloud=False)
+		session = BrowserSession(browser_profile=profile, headless=True)
+		assert session.browser_profile.headless is True
+		assert session.browser_profile.is_local is True
+
+		remote = BrowserSession(cdp_url='ws://remote.example/devtools/browser/1')
+		assert remote.browser_profile.is_local is False
+
+		local_executable = BrowserSession(cdp_url='ws://localhost/devtools/browser/1', executable_path='/bin/true')
+		assert local_executable.browser_profile.is_local is True
+
+	def test_explicit_cloud_proxy_none_overrides_profile_proxy(self):
+		profile = BrowserProfile(
+			use_cloud=True,
+			cloud_browser_params=CreateBrowserRequest(cloud_proxy_country_code='us'),
+		)
+		session = BrowserSession(browser_profile=profile, cloud_proxy_country_code=None)  # type: ignore[call-overload]
+		assert session.browser_profile.use_cloud is True
+		assert session.browser_profile.cloud_browser_params is not None
+		assert session.browser_profile.cloud_browser_params.proxy_country_code is None

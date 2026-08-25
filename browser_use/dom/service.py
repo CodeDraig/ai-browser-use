@@ -994,7 +994,8 @@ class DomService:
 					if should_process_iframe:
 						# Lazy fetch all_frames only when actually needed (for cross-origin iframes)
 						if all_frames is None:
-							all_frames, _ = await self.browser_session.get_all_frames()
+							all_frames, _ = await self.browser_session.session_manager.get_all_frames()
+						assert all_frames is not None
 
 						# Use pre-fetched all_frames to find the iframe's target (no redundant CDP call)
 						frame_id = node.get('frameId', None)

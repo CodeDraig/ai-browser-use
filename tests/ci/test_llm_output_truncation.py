@@ -108,7 +108,7 @@ def test_truncation_error_triggers_fallback_llm_switch(tmp_path):
 	)
 
 	error = ModelOutputTruncatedError(message='Model output was truncated at max_completion_tokens=4096', model='gpt-4o')
-	assert agent._try_switch_to_fallback_llm(error) is True
+	assert agent._model_interaction._try_switch_to_fallback_llm(error) is True
 	assert agent._using_fallback_llm is True
 
 

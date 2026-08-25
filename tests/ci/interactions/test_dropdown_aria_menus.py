@@ -165,7 +165,7 @@ class TestARIAMenuDropdown:
 		await browser_session.get_browser_state_summary()
 
 		# Find the ARIA menu element by ID
-		menu_index = await browser_session.get_index_by_id('pyNavigation1752753375773')
+		menu_index = await browser_session.dom_state.get_index_by_id('pyNavigation1752753375773')
 
 		assert menu_index is not None, 'Could not find ARIA menu element'
 
@@ -203,7 +203,7 @@ class TestARIAMenuDropdown:
 		await browser_session.get_browser_state_summary()
 
 		# Find the ARIA menu element by ID
-		menu_index = await browser_session.get_index_by_id('pyNavigation1752753375773')
+		menu_index = await browser_session.dom_state.get_index_by_id('pyNavigation1752753375773')
 
 		assert menu_index is not None, 'Could not find ARIA menu element'
 
@@ -246,7 +246,7 @@ class TestARIAMenuDropdown:
 		await browser_session.get_browser_state_summary()
 
 		# Get the selector map
-		selector_map = await browser_session.get_selector_map()
+		selector_map = await browser_session.dom_state.get_selector_map()
 
 		# Find the nested ARIA menu element in the selector map
 		nested_menu_index = None

@@ -6,10 +6,11 @@ from typing import Any, cast
 import pytest
 
 from browser_use.actor.page import Page
-from browser_use.agent.service import Agent
+from browser_use.agent.history_replay import AgentHistoryReplay
 from browser_use.browser import python_highlights
 from browser_use.browser.profile import BrowserProfile
 from browser_use.browser.session import BrowserSession
+from browser_use.browser.session_manager import SessionManager
 from browser_use.browser.views import BrowserStateSummary
 from browser_use.dom.serializer.serializer import DOMTreeSerializer
 from browser_use.dom.service import DomService
@@ -93,11 +94,56 @@ def test_session_lookup_keeps_selector_and_backend_identity_separate():
 	main_input = _node('input', node_id=1, backend_node_id=5, session_id='main')
 	iframe_input = _node('input', node_id=2, backend_node_id=5, session_id='iframe')
 	session = BrowserSession(browser_profile=BrowserProfile(use_cloud=False))
-	session.update_cached_selector_map({5: main_input, 101: iframe_input})
+	session.dom_state.update_cached_selector_map({5: main_input, 101: iframe_input})
 
-	assert session.get_selector_index(iframe_input) == 101
-	assert session._get_cached_node_by_backend_id(5, 'main') is main_input
-	assert session._get_cached_node_by_backend_id(5, 'iframe') is iframe_input
+	assert session.dom_state.get_selector_index(iframe_input) == 101
+	assert session.dom_state._get_cached_node_by_backend_id(5, 'main') is main_input
+	assert session.dom_state._get_cached_node_by_backend_id(5, 'iframe') is iframe_input
+
+
+def test_file_input_discovery_uses_dom_state_ownership():
+	trigger = _node('button', node_id=1, backend_node_id=1, session_id='main')
+	file_input = _node('input', node_id=2, backend_node_id=2, session_id='main')
+	file_input.attributes['type'] = 'file'
+	root = _node('div', node_id=3, backend_node_id=3, session_id='main')
+	root.children_nodes = [trigger, file_input]
+	trigger.parent_node = root
+	file_input.parent_node = root
+
+	session = BrowserSession(browser_profile=BrowserProfile(use_cloud=False))
+	assert session.dom_state.is_file_input(file_input)
+	assert session.dom_state.find_file_input_near_element(trigger) is file_input
+
+
+@pytest.mark.asyncio
+async def test_dom_state_creates_and_removes_highlights(monkeypatch):
+	node = _node('button', node_id=1, backend_node_id=1, session_id='main')
+	session = BrowserSession(
+		browser_profile=BrowserProfile(use_cloud=False, highlight_elements=True, dom_highlight_elements=True)
+	)
+	expressions: list[str] = []
+
+	async def evaluate(*, params, session_id):
+		assert session_id == 'main'
+		expressions.append(params['expression'])
+		return {'result': {'value': {'added': 1, 'removed': 1}}}
+
+	fake_cdp_session = SimpleNamespace(
+		session_id='main',
+		cdp_client=SimpleNamespace(send=SimpleNamespace(Runtime=SimpleNamespace(evaluate=evaluate))),
+	)
+
+	async def get_session(_session):
+		return fake_cdp_session
+
+	monkeypatch.setattr(BrowserSession, 'get_or_create_cdp_session', get_session)
+	await session.dom_state.add_highlights({7: node})
+	await session.dom_state.remove_highlights()
+
+	assert len(expressions) == 3
+	assert 'browser-use-debug-highlights' in expressions[0]
+	assert 'data-element-id' in expressions[1]
+	assert 'browser-use-debug-highlights' in expressions[2]
 
 
 @pytest.mark.asyncio
@@ -135,7 +181,7 @@ async def test_history_remapping_prefers_the_original_frame():
 	action = FakeAction()
 	state = BrowserStateSummary(dom_state=serialized_state, url='https://example.test', title='Test', tabs=[])
 
-	updated_action = await Agent._update_action_indices(agent, historical_element, cast(Any, action), state)
+	updated_action = await AgentHistoryReplay(agent)._update_action_indices(historical_element, cast(Any, action), state)
 
 	assert updated_action is action
 	assert action.index == 101
@@ -193,10 +239,10 @@ async def test_interaction_highlight_uses_the_nodes_cdp_session(monkeypatch):
 		assert cdp_session is iframe_cdp_session
 		return None
 
-	monkeypatch.setattr(BrowserSession, 'cdp_client_for_node', resolve_node_session)
-	monkeypatch.setattr(BrowserSession, 'get_element_coordinates', no_coordinates)
+	monkeypatch.setattr(SessionManager, 'cdp_client_for_node', resolve_node_session)
+	monkeypatch.setattr(session.dom_state, 'get_element_coordinates', no_coordinates)
 
-	await session.highlight_interaction_element(iframe_input)
+	await session.dom_state.highlight_interaction_element(iframe_input)
 
 	assert resolved_nodes == [iframe_input]
 
@@ -231,7 +277,7 @@ async def test_actor_prompt_element_uses_the_selected_nodes_session(monkeypatch)
 
 	monkeypatch.setattr('browser_use.actor.page.DOMTreeSerializer', FakeSerializer)
 	monkeypatch.setattr(DomService, 'get_dom_tree', get_dom_tree)
-	monkeypatch.setattr(BrowserSession, 'cdp_client_for_node', resolve_node_session)
+	monkeypatch.setattr(SessionManager, 'cdp_client_for_node', resolve_node_session)
 
 	page = Page(session, target_id='target-main', session_id='main', llm=cast(Any, FakeLLM()))
 	element = await page.get_element_by_prompt('card number')

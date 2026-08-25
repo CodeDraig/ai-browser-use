@@ -67,7 +67,7 @@ def register_input_actions(tools: 'Tools') -> None:
 		sensitive_data: SensitiveData | None = None,
 	):
 		# Look up the node from the selector map
-		node = await browser_session.get_dom_element_by_index(params.index)
+		node = await browser_session.dom_state.get_dom_element_by_index(params.index)
 		if node is None:
 			msg = f'Element index {params.index} not available - page may have changed. Try refreshing browser state.'
 			logger.warning(f'⚠️ {msg}')
@@ -75,7 +75,7 @@ def register_input_actions(tools: 'Tools') -> None:
 
 		# Highlight the element being typed into (truly non-blocking)
 		create_task_with_error_handling(
-			browser_session.highlight_interaction_element(node), name='highlight_type_element', suppress_exceptions=True
+			browser_session.dom_state.highlight_interaction_element(node), name='highlight_type_element', suppress_exceptions=True
 		)
 
 		# Dispatch type text event with node
@@ -205,7 +205,7 @@ def register_input_actions(tools: 'Tools') -> None:
 				return ActionResult(error=msg)
 
 		# Get the selector map to find the node
-		selector_map = await browser_session.get_selector_map()
+		selector_map = await browser_session.dom_state.get_selector_map()
 		if params.index not in selector_map:
 			msg = f'Element with index {params.index} does not exist.'
 			return ActionResult(error=msg)
@@ -213,12 +213,12 @@ def register_input_actions(tools: 'Tools') -> None:
 		node = selector_map[params.index]
 
 		# Try to find a file input element near the selected element
-		file_input_node = browser_session.find_file_input_near_element(node)
+		file_input_node = browser_session.dom_state.find_file_input_near_element(node)
 
 		# Highlight the file input element if found (truly non-blocking)
 		if file_input_node:
 			create_task_with_error_handling(
-				browser_session.highlight_interaction_element(file_input_node),
+				browser_session.dom_state.highlight_interaction_element(file_input_node),
 				name='highlight_file_input',
 				suppress_exceptions=True,
 			)
@@ -244,7 +244,7 @@ def register_input_actions(tools: 'Tools') -> None:
 			min_distance = float('inf')
 
 			for idx, element in selector_map.items():
-				if browser_session.is_file_input(element):
+				if browser_session.dom_state.is_file_input(element):
 					# Get element's Y position
 					if element.absolute_position:
 						element_y = element.absolute_position.y
@@ -259,7 +259,7 @@ def register_input_actions(tools: 'Tools') -> None:
 
 				# Highlight the fallback file input element (truly non-blocking)
 				create_task_with_error_handling(
-					browser_session.highlight_interaction_element(file_input_node),
+					browser_session.dom_state.highlight_interaction_element(file_input_node),
 					name='highlight_file_input_fallback',
 					suppress_exceptions=True,
 				)

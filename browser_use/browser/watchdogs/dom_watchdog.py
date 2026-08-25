@@ -364,8 +364,8 @@ class DOMWatchdog(BaseWatchdog):
 				self.logger.debug('🔍 DOMWatchdog.on_BrowserStateRequestEvent: 🌳 Starting DOM tree build task...')
 
 				previous_state = (
-					self.browser_session._cached_browser_state_summary.dom_state
-					if self.browser_session._cached_browser_state_summary
+					self.browser_session.dom_state.cached_browser_state_summary.dom_state
+					if self.browser_session.dom_state.cached_browser_state_summary
 					else None
 				)
 
@@ -420,7 +420,7 @@ class DOMWatchdog(BaseWatchdog):
 			if content and content.selector_map and self.browser_session.browser_profile.dom_highlight_elements:
 				try:
 					self.logger.debug('🔍 DOMWatchdog.on_BrowserStateRequestEvent: 🎨 Adding browser-side highlights...')
-					await self.browser_session.add_highlights(content.selector_map)
+					await self.browser_session.dom_state.add_highlights(content.selector_map)
 					self.logger.debug(
 						f'🔍 DOMWatchdog.on_BrowserStateRequestEvent: ✅ Added browser highlights for {len(content.selector_map)} elements'
 					)
@@ -502,11 +502,11 @@ class DOMWatchdog(BaseWatchdog):
 			)
 
 			# Cache the state
-			self.browser_session._cached_browser_state_summary = browser_state
+			self.browser_session.dom_state.cached_browser_state_summary = browser_state
 
 			# Cache viewport size for coordinate conversion (if llm_screenshot_size is enabled)
 			if page_info:
-				self.browser_session._original_viewport_size = (page_info.viewport_width, page_info.viewport_height)
+				self.browser_session.dom_state.original_viewport_size = (page_info.viewport_width, page_info.viewport_height)
 
 			self.logger.debug('🔍 DOMWatchdog.on_BrowserStateRequestEvent: ✅ COMPLETED - Returning browser state')
 			return browser_state
@@ -666,7 +666,7 @@ class DOMWatchdog(BaseWatchdog):
 			self.selector_map = self.current_dom_state.selector_map
 			# Update BrowserSession's cached selector map
 			if self.browser_session:
-				self.browser_session.update_cached_selector_map(self.selector_map)
+				self.browser_session.dom_state.update_cached_selector_map(self.selector_map)
 			self.logger.debug(
 				f'🔍 DOMWatchdog._build_dom_tree_without_highlights: ✅ Selector maps updated, {len(self.selector_map)} elements'
 			)

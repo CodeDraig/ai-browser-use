@@ -26,8 +26,8 @@ def _convert_llm_coordinates_to_viewport(
 	browser_session: BrowserSession,
 ) -> tuple[int, int]:
 	"""Convert coordinates from the LLM screenshot size to the browser viewport."""
-	if browser_session.llm_screenshot_size and browser_session._original_viewport_size:
-		original_width, original_height = browser_session._original_viewport_size
+	if browser_session.llm_screenshot_size and browser_session.dom_state.original_viewport_size:
+		original_width, original_height = browser_session.dom_state.original_viewport_size
 		llm_width, llm_height = browser_session.llm_screenshot_size
 		actual_x = int((llm_x / llm_width) * original_width)
 		actual_y = int((llm_y / llm_height) * original_height)
@@ -118,7 +118,7 @@ def register_click_actions(tools: 'Tools') -> None:
 
 			# Highlight the coordinate being clicked (truly non-blocking)
 			create_task_with_error_handling(
-				browser_session.highlight_coordinate_click(actual_x, actual_y),
+				browser_session.dom_state.highlight_coordinate_click(actual_x, actual_y),
 				name='highlight_coordinate_click',
 				suppress_exceptions=True,
 			)
@@ -160,7 +160,7 @@ def register_click_actions(tools: 'Tools') -> None:
 			)
 
 			# Look up the node from the selector map
-			node = await browser_session.get_dom_element_by_index(params.index)
+			node = await browser_session.dom_state.get_dom_element_by_index(params.index)
 			if node is None:
 				msg = f'Element index {params.index} not available - page may have changed. Try refreshing browser state.'
 				logger.warning(f'⚠️ {msg}')
@@ -174,7 +174,9 @@ def register_click_actions(tools: 'Tools') -> None:
 
 			# Highlight the element being clicked (truly non-blocking)
 			create_task_with_error_handling(
-				browser_session.highlight_interaction_element(node), name='highlight_click_element', suppress_exceptions=True
+				browser_session.dom_state.highlight_interaction_element(node),
+				name='highlight_click_element',
+				suppress_exceptions=True,
 			)
 
 			event = browser_session.event_bus.dispatch(ClickElementEvent(node=node))

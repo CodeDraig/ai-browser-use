@@ -92,7 +92,7 @@ async def _get_enhanced_dom_tree_from_browser_session(browser_session: 'BrowserS
 	"""Get enhanced DOM tree from browser session via DOMWatchdog."""
 	# Get the enhanced DOM tree from DOMWatchdog
 	# This captures the current state of the page including dynamic content, shadow roots, etc.
-	dom_watchdog: DOMWatchdog | None = browser_session._dom_watchdog
+	dom_watchdog: DOMWatchdog | None = browser_session.watchdogs.dom
 	assert dom_watchdog is not None, 'DOMWatchdog not available'
 
 	# Use cached enhanced DOM tree if available, otherwise build it

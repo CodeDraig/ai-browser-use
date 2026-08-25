@@ -121,7 +121,7 @@ class TestFallbackLLMParameter:
 
 		# Trigger fallback
 		error = ModelRateLimitError(message='Rate limit', status_code=429, model='primary')
-		agent._try_switch_to_fallback_llm(error)
+		agent._model_interaction._try_switch_to_fallback_llm(error)
 
 		# After fallback
 		assert agent.is_using_fallback_llm is True
@@ -141,7 +141,7 @@ class TestFallbackLLMSwitching:
 		agent = Agent(task='Test task', llm=primary, fallback_llm=fallback)
 
 		error = ModelRateLimitError(message='Rate limit exceeded', status_code=429, model='primary-model')
-		result = agent._try_switch_to_fallback_llm(error)
+		result = agent._model_interaction._try_switch_to_fallback_llm(error)
 
 		assert result is True
 		assert agent.llm is fallback
@@ -157,7 +157,7 @@ class TestFallbackLLMSwitching:
 		agent = Agent(task='Test task', llm=primary, fallback_llm=fallback)
 
 		error = ModelProviderError(message='Service unavailable', status_code=503, model='primary-model')
-		result = agent._try_switch_to_fallback_llm(error)
+		result = agent._model_interaction._try_switch_to_fallback_llm(error)
 
 		assert result is True
 		assert agent.llm is fallback
@@ -173,7 +173,7 @@ class TestFallbackLLMSwitching:
 		agent = Agent(task='Test task', llm=primary, fallback_llm=fallback)
 
 		error = ModelProviderError(message='Internal server error', status_code=500, model='primary-model')
-		result = agent._try_switch_to_fallback_llm(error)
+		result = agent._model_interaction._try_switch_to_fallback_llm(error)
 
 		assert result is True
 		assert agent.llm is fallback
@@ -188,7 +188,7 @@ class TestFallbackLLMSwitching:
 		agent = Agent(task='Test task', llm=primary, fallback_llm=fallback)
 
 		error = ModelProviderError(message='Bad gateway', status_code=502, model='primary-model')
-		result = agent._try_switch_to_fallback_llm(error)
+		result = agent._model_interaction._try_switch_to_fallback_llm(error)
 
 		assert result is True
 		assert agent.llm is fallback
@@ -203,7 +203,7 @@ class TestFallbackLLMSwitching:
 		agent = Agent(task='Test task', llm=primary, fallback_llm=fallback)
 
 		error = ModelProviderError(message='Bad request', status_code=400, model='primary-model')
-		result = agent._try_switch_to_fallback_llm(error)
+		result = agent._model_interaction._try_switch_to_fallback_llm(error)
 
 		assert result is False
 		assert agent.llm is primary  # Still using primary
@@ -219,7 +219,7 @@ class TestFallbackLLMSwitching:
 		agent = Agent(task='Test task', llm=primary, fallback_llm=fallback)
 
 		error = ModelProviderError(message='Invalid API key', status_code=401, model='primary-model')
-		result = agent._try_switch_to_fallback_llm(error)
+		result = agent._model_interaction._try_switch_to_fallback_llm(error)
 
 		assert result is True
 		assert agent.llm is fallback
@@ -235,7 +235,7 @@ class TestFallbackLLMSwitching:
 		agent = Agent(task='Test task', llm=primary, fallback_llm=fallback)
 
 		error = ModelProviderError(message='Insufficient credits', status_code=402, model='primary-model')
-		result = agent._try_switch_to_fallback_llm(error)
+		result = agent._model_interaction._try_switch_to_fallback_llm(error)
 
 		assert result is True
 		assert agent.llm is fallback
@@ -249,7 +249,7 @@ class TestFallbackLLMSwitching:
 		agent = Agent(task='Test task', llm=primary)
 
 		error = ModelRateLimitError(message='Rate limit exceeded', status_code=429, model='primary-model')
-		result = agent._try_switch_to_fallback_llm(error)
+		result = agent._model_interaction._try_switch_to_fallback_llm(error)
 
 		assert result is False
 		assert agent.llm is primary
@@ -265,12 +265,12 @@ class TestFallbackLLMSwitching:
 
 		# First switch succeeds
 		error = ModelRateLimitError(message='Rate limit', status_code=429, model='primary')
-		result = agent._try_switch_to_fallback_llm(error)
+		result = agent._model_interaction._try_switch_to_fallback_llm(error)
 		assert result is True
 		assert agent.llm is fallback
 
 		# Second switch fails - already using fallback
-		result = agent._try_switch_to_fallback_llm(error)
+		result = agent._model_interaction._try_switch_to_fallback_llm(error)
 		assert result is False
 		assert agent.llm is fallback  # Still on fallback
 
@@ -372,7 +372,7 @@ class TestFallbackLLMIntegration:
 		messages: list[BaseMessage] = [UserMessage(content='Test message')]
 
 		# This should switch to fallback and succeed
-		result = await agent.get_model_output(messages)
+		result = await agent._model_interaction.get_model_output(messages)
 
 		assert result is not None
 		assert agent.llm is fallback
@@ -404,7 +404,7 @@ class TestFallbackLLMIntegration:
 
 		# This should raise since no fallback is configured
 		with pytest.raises(ModelRateLimitError):
-			await agent.get_model_output(messages)
+			await agent._model_interaction.get_model_output(messages)
 
 	@pytest.mark.asyncio
 	async def test_get_model_output_raises_when_fallback_also_fails(self, browser_session):
@@ -429,7 +429,7 @@ class TestFallbackLLMIntegration:
 
 		# Should fail after fallback also fails
 		with pytest.raises((ModelRateLimitError, ModelProviderError)):
-			await agent.get_model_output(messages)
+			await agent._model_interaction.get_model_output(messages)
 
 
 if __name__ == '__main__':

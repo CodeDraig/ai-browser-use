@@ -33,7 +33,6 @@ async def main():
 
 ### Core Settings
 - `tools`: Registry of tools the agent can call
-- `skills`: List of skill IDs to load (e.g., `['skill-uuid']` or `['*']` for all). Requires `BROWSER_USE_API_KEY`
 - `browser`: Browser object for browser settings
 - `output_model_schema`: Pydantic model class for structured output validation
 

@@ -348,7 +348,7 @@ async def test_loop_nudge_injected_into_context():
 	for _ in range(5):
 		agent.state.loop_detector.record_action('search', {'query': 'site:example.com answers'})
 
-	agent._inject_loop_detection_nudge()
+	agent._execution._inject_loop_detection_nudge()
 
 	messages = _get_context_messages(agent)
 	assert len(messages) == 1
@@ -368,7 +368,7 @@ async def test_no_loop_nudge_when_disabled():
 	for _ in range(8):
 		agent.state.loop_detector.record_action('search', {'query': 'site:example.com answers'})
 
-	agent._inject_loop_detection_nudge()
+	agent._execution._inject_loop_detection_nudge()
 
 	messages = _get_context_messages(agent)
 	assert len(messages) == 0
@@ -383,7 +383,7 @@ async def test_no_loop_nudge_for_diverse_actions():
 	agent.state.loop_detector.record_action('scroll', {'down': True, 'index': None})
 	agent.state.loop_detector.record_action('click', {'index': 2})
 
-	agent._inject_loop_detection_nudge()
+	agent._execution._inject_loop_detection_nudge()
 
 	messages = _get_context_messages(agent)
 	assert len(messages) == 0

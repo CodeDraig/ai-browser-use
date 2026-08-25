@@ -1,9 +1,50 @@
+import ast
 import importlib
 import importlib.util
 import inspect
+import re
 from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
+
+
+def test_removed_agent_skills_and_browser_close_examples_do_not_return():
+	"""Python documentation must use the retained Agent and Browser facades."""
+	documentation_roots = (
+		REPOSITORY_ROOT / 'skills' / 'open-source' / 'references',
+		REPOSITORY_ROOT / 'skills' / 'cloud' / 'references',
+	)
+
+	for root in documentation_roots:
+		for path in root.rglob('*.md'):
+			for python_block in re.findall(r'```python[^\n]*\n(.*?)```', path.read_text(encoding='utf-8'), re.DOTALL):
+				assert 'await browser.close()' not in python_block, path
+				if 'Agent(' in python_block:
+					assert re.search(r'\bskills\s*=', python_block) is None, path
+
+	for path in (REPOSITORY_ROOT / 'examples').rglob('*.py'):
+		tree = ast.parse(path.read_text(encoding='utf-8'), filename=str(path))
+		browser_names: set[str] = set()
+		for node in ast.walk(tree):
+			if isinstance(node, ast.Assign) and isinstance(node.value, ast.Call):
+				call_name = getattr(node.value.func, 'id', None)
+				if call_name in {'Browser', 'BrowserSession'}:
+					browser_names.update(target.id for target in node.targets if isinstance(target, ast.Name))
+			elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and isinstance(node.value, ast.Call):
+				if getattr(node.value.func, 'id', None) in {'Browser', 'BrowserSession'}:
+					browser_names.add(node.target.id)
+
+		for node in ast.walk(tree):
+			if isinstance(node, ast.Call) and getattr(node.func, 'id', None) == 'Agent':
+				assert all(keyword.arg != 'skills' for keyword in node.keywords), path
+			if (
+				isinstance(node, ast.Call)
+				and isinstance(node.func, ast.Attribute)
+				and node.func.attr == 'close'
+				and isinstance(node.func.value, ast.Name)
+				and node.func.value.id in browser_names
+			):
+				raise AssertionError(path)
 
 
 def test_removed_tracking_surfaces_do_not_return():
@@ -163,13 +204,41 @@ def test_removed_constructor_aliases_and_wrappers_are_absent():
 	from pydantic import ValidationError
 
 	from browser_use.actor.page import Page
+	from browser_use.agent.configuration import AgentConfiguration
+	from browser_use.agent.execution import AgentExecution
+	from browser_use.agent.history_replay import AgentHistoryReplay
+	from browser_use.agent.model_interaction import AgentModelInteraction
 	from browser_use.agent.service import Agent
 	from browser_use.agent.views import ActionResult, AgentHistoryList, AgentOutput
 	from browser_use.browser.profile import BrowserProfile
 	from browser_use.browser.session import BrowserSession
 	from browser_use.llm.base import BaseChatModel
 
-	assert not {'browser_session', 'controller', 'skill_ids'} & set(inspect.signature(Agent).parameters)
+	assert not {'browser_session', 'controller', 'skill_ids', 'skills', 'skill_service'} & set(
+		inspect.signature(Agent).parameters
+	)
+	for method in (
+		'run',
+		'run_sync',
+		'add_new_task',
+		'pause',
+		'resume',
+		'stop',
+		'close',
+		'save_history',
+		'rerun_history',
+		'load_and_rerun',
+		'detect_variables',
+	):
+		assert hasattr(Agent, method)
+	for method in ('step', 'take_step', 'multi_act', 'save_file_system_state', 'log_completion'):
+		assert not hasattr(Agent, method)
+	assert Agent.__module__ == 'browser_use.agent.service'
+	assert not hasattr(__import__('browser_use.agent.service', fromlist=['_PythonAgent']), '_PythonAgent')
+	assert all(
+		component.__module__.startswith('browser_use.agent.')
+		for component in (AgentConfiguration, AgentModelInteraction, AgentExecution, AgentHistoryReplay)
+	)
 	assert not {
 		'profile_id',
 		'proxy_country_code',
@@ -218,6 +287,70 @@ def test_removed_constructor_aliases_and_wrappers_are_absent():
 	from browser_use.llm.messages import BaseMessage
 
 	assert BaseMessage is not None
+
+
+def test_browser_session_facade_contract_and_component_ownership():
+	from browser_use.browser import session as session_module
+	from browser_use.browser.event_bus import ResilientEventBus
+	from browser_use.browser.session import BrowserSession
+	from browser_use.browser.session_manager import CDPSession, SessionManager, Target
+	from browser_use.browser.watchdogs.registry import WatchdogRegistry
+	from browser_use.dom.browser_state import BrowserDomState
+
+	retained = {
+		'start',
+		'stop',
+		'kill',
+		'reset',
+		'connect',
+		'new_page',
+		'get_current_page',
+		'get_tabs',
+		'navigate_to',
+		'get_browser_state_summary',
+		'get_or_create_cdp_session',
+		'take_screenshot',
+	}
+	assert all(hasattr(BrowserSession, name) for name in retained)
+
+	removed_or_moved = {
+		'close',
+		'get_state_as_text',
+		'get_current_target_info',
+		'get_target_id_from_tab_id',
+		'get_target_id_from_url',
+		'get_most_recently_opened_target_id',
+		'_cdp_get_all_pages',
+		'_cdp_grant_permissions',
+		'get_all_frames',
+		'find_frame_target',
+		'cdp_client_for_target',
+		'cdp_client_for_frame',
+		'cdp_client_for_node',
+		'get_dom_element_by_index',
+		'get_selector_map',
+		'get_index_by_class',
+		'is_file_input',
+		'add_highlights',
+		'remove_highlights',
+		'screenshot_element',
+		'_get_element_bounds',
+	}
+	assert not any(hasattr(BrowserSession, name) for name in removed_or_moved)
+	assert all(
+		hasattr(SessionManager, name)
+		for name in ('get_all_pages', 'get_all_frames', 'cdp_client_for_node', 'get_target_id_from_tab_id')
+	)
+	assert all(
+		hasattr(BrowserDomState, name)
+		for name in ('get_dom_element_by_index', 'get_selector_map', 'is_file_input', 'add_highlights', 'remove_highlights')
+	)
+	assert WatchdogRegistry is not None
+	assert Target.__module__ == CDPSession.__module__ == 'browser_use.browser.session_manager'
+	assert ResilientEventBus.__module__ == 'browser_use.browser.event_bus'
+	assert not hasattr(session_module, 'Target')
+	assert not hasattr(session_module, 'CDPSession')
+	assert not hasattr(session_module, 'ResilientEventBus')
 
 
 def test_removed_cli_config_and_dom_compatibility_surfaces_are_absent():

@@ -82,11 +82,13 @@ async def test_cdp_proxy_auth_handler_registers_and_responds():
 	session._cdp_client_root = root  # type: ignore[attr-defined]
 	# No need to attach a real CDPSession; _setup_proxy_auth works with root client
 
-	# Should register Fetch handler and enable auth handling without raising
+	# Auth challenge handling is registered at the root, while SessionManager's
+	# target-scoped Fetch configuration owns request pausing.
 	await session._setup_proxy_auth()
 
-	assert root.enabled is True
+	assert root.enabled is False
 	assert callable(root.auth_callback)
+	assert root.request_paused_callback is None
 
 	# Simulate proxy auth required event
 	ev = {'requestId': 'r1', 'authChallenge': {'source': 'Proxy'}}

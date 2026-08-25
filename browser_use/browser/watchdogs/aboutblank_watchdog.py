@@ -71,7 +71,7 @@ class AboutBlankWatchdog(BaseWatchdog):
 
 		# Check if we're about to close the last tab (event happens BEFORE tab closes)
 		# Use _cdp_get_all_pages for quick check without fetching titles
-		page_targets = await self.browser_session._cdp_get_all_pages()
+		page_targets = await self.browser_session.session_manager.get_all_pages()
 		if len(page_targets) < 1:
 			self.logger.debug(
 				'[AboutBlankWatchdog] Last tab closing, creating new about:blank tab to avoid closing entire browser'
@@ -96,7 +96,7 @@ class AboutBlankWatchdog(BaseWatchdog):
 				return
 
 			# For quick checks, just get page targets without titles to reduce noise
-			page_targets = await self.browser_session._cdp_get_all_pages()
+			page_targets = await self.browser_session.session_manager.get_all_pages()
 
 			# If no tabs exist at all, create one to keep browser alive
 			if len(page_targets) == 0:
@@ -115,7 +115,7 @@ class AboutBlankWatchdog(BaseWatchdog):
 		"""Show DVD screensaver on all about:blank pages only."""
 		try:
 			# Get just the page targets without expensive title fetching
-			page_targets = await self.browser_session._cdp_get_all_pages()
+			page_targets = await self.browser_session.session_manager.get_all_pages()
 			browser_session_label = str(self.browser_session.id)[-4:]
 
 			for page_target in page_targets:

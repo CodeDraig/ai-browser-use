@@ -130,7 +130,7 @@ async def analyze_frame_hierarchy(url):
 		print('UNIFIED FRAME HIERARCHY (get_all_frames method)')
 		print('=' * 80)
 
-		all_frames, target_sessions = await session.get_all_frames()
+		all_frames, target_sessions = await session.session_manager.get_all_frames()
 
 		# Clean up sessions
 		for tid, sess_id in target_sessions.items():
@@ -222,21 +222,10 @@ async def analyze_frame_hierarchy(url):
 		# Stop the CDP client first before killing the browser
 		print('\n🛑 Shutting down...')
 
-		# Close CDP connection first while browser is still alive
-		if session._cdp_client_root:
-			try:
-				await session._cdp_client_root.stop()
-			except Exception:
-				pass  # Ignore errors if already disconnected
-
-		# Then stop the browser process
-		from browser_use.browser.events import BrowserStopEvent
-
-		stop_event = session.event_bus.dispatch(BrowserStopEvent())
 		try:
-			await asyncio.wait_for(stop_event, timeout=2.0)
+			await asyncio.wait_for(session.kill(), timeout=5.0)
 		except TimeoutError:
-			print('⚠️ Browser stop timed out')
+			print('⚠️ Browser kill timed out')
 
 
 def main():

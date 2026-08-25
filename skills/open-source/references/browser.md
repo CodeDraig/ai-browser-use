@@ -25,6 +25,14 @@ await agent.run()
 
 `Browser` is the preferred package-root name for the `BrowserSession` implementation.
 
+### Lifecycle
+
+- `await browser.stop()` disconnects the session. When the session launched local Chromium, the owned process, tabs, CDP endpoint, and profile ownership are retained so `start()` can reconnect to them.
+- `await browser.kill()` destroys BrowserSession-owned process and temporary resources. Use it when browser closure is the intended outcome. If process termination fails, it raises while retaining ownership and cleanup metadata so the call can be retried.
+- `keep_alive` controls automatic agent cleanup; it does not change the meaning of an explicit `stop()` or `kill()` call.
+- With `allowed_domains`, `prohibited_domains`, or IP blocking configured, `new_page(url)` creates an intercepted blank target before navigating. A directly blocked URL emits `BrowserErrorEvent`, closes that target, and returns its closed `Page` handle. If Chromium cannot confirm closure after a bounded retry, `new_page()` raises with the target ID for recovery through `get_pages()`/`close_page()` or `kill()`; interception setup failures also raise instead of returning an unsafe page.
+- URL policy is enforced on top-level page navigation only while the session is connected. Subresources and iframe navigation are unaffected.
+
 ## All Parameters
 
 ### Core
@@ -39,7 +47,7 @@ await agent.run()
 - `device_scale_factor`: DPI (`2.0` for retina)
 
 ### Browser Behavior
-- `keep_alive` (default: `None`): Keep browser running after agent completes
+- `keep_alive` (default: `None`): Keep the browser running after automatic agent cleanup
 - `allowed_domains`: Restrict navigation with patterns:
   - `'example.com'` → `https://example.com/*`
   - `'*.example.com'` → domain + subdomains

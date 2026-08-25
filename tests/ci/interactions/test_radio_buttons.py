@@ -207,7 +207,7 @@ class TestRadioButtons:
 		)
 		await browser_session.get_browser_state_summary()
 
-		idx = await browser_session.get_index_by_id('radio-blue')
+		idx = await browser_session.dom_state.get_index_by_id('radio-blue')
 		assert idx is not None, 'Could not find radio-blue in selector map'
 
 		result = await execute_registered_action(tools, 'click', index=idx, browser_session=browser_session)
@@ -224,7 +224,7 @@ class TestRadioButtons:
 		)
 		await browser_session.get_browser_state_summary()
 
-		idx = await browser_session.get_index_by_id('radio-banana')
+		idx = await browser_session.dom_state.get_index_by_id('radio-banana')
 		assert idx is not None, 'Could not find radio-banana in selector map'
 
 		result = await execute_registered_action(tools, 'click', index=idx, browser_session=browser_session)
@@ -241,7 +241,7 @@ class TestRadioButtons:
 		)
 		await browser_session.get_browser_state_summary()
 
-		idx = await browser_session.get_index_by_id('radio-large')
+		idx = await browser_session.dom_state.get_index_by_id('radio-large')
 		assert idx is not None, 'Could not find radio-large in selector map'
 
 		result = await execute_registered_action(tools, 'click', index=idx, browser_session=browser_session)
@@ -259,7 +259,7 @@ class TestRadioButtons:
 		await browser_session.get_browser_state_summary()
 
 		# Click red first
-		red_idx = await browser_session.get_index_by_id('radio-red')
+		red_idx = await browser_session.dom_state.get_index_by_id('radio-red')
 		assert red_idx is not None
 		result = await execute_registered_action(tools, 'click', index=red_idx, browser_session=browser_session)
 		assert result.error is None, f'Click red failed: {result.error}'
@@ -269,7 +269,7 @@ class TestRadioButtons:
 
 		# Re-fetch state so indices are current, then click green
 		await browser_session.get_browser_state_summary()
-		green_idx = await browser_session.get_index_by_id('radio-green')
+		green_idx = await browser_session.dom_state.get_index_by_id('radio-green')
 		assert green_idx is not None
 		result = await execute_registered_action(tools, 'click', index=green_idx, browser_session=browser_session)
 		assert result.error is None, f'Click green failed: {result.error}'

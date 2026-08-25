@@ -1,9 +1,8 @@
-# Integrations (MCP, Skills, Docs)
+# Integrations (MCP and Docs)
 
 ## Table of Contents
 - [MCP Server (Cloud)](#mcp-server-cloud)
 - [MCP Server (Local)](#mcp-server-local)
-- [Skills](#skills)
 - [Documentation MCP](#documentation-mcp)
 
 ---
@@ -141,29 +140,6 @@ async def use_browser_mcp():
             await session.initialize()
             result = await session.call_tool("browser_navigate", arguments={"url": "https://example.com"})
 ```
-
----
-
-## Skills
-
-Load cloud skills into agents as reusable API endpoints:
-
-```python
-agent = Agent(
-    task='Analyze TikTok and Instagram profiles',
-    skills=[
-        'a582eb44-e4e2-4c55-acc2-2f5a875e35e9',  # TikTok Scraper
-        'f8d91c2a-3b4e-4f7d-9a1e-6c8e2d3f4a5b',  # Instagram Scraper
-    ],
-    llm=ChatBrowserUse()
-)
-await agent.run()
-```
-
-- Use `skills=['*']` for all skills (each adds ~200 tokens to prompt)
-- Requires `BROWSER_USE_API_KEY`
-- Browse/create at [cloud.browser-use.com/skills](https://cloud.browser-use.com/skills)
-- Cookies auto-injected from browser; if missing, LLM navigates to obtain them
 
 ---
 

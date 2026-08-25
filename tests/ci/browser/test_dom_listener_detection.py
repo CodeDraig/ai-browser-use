@@ -141,11 +141,11 @@ async def test_whole_state_timeout_returns_model_visible_non_actionable_state(
 	state = await browser_session.get_browser_state_summary(include_screenshot=True)
 
 	assert state.dom_state.selector_map == {}
-	assert await browser_session.get_selector_map() == {}
+	assert await browser_session.dom_state.get_selector_map() == {}
 	assert state.screenshot is None
 	assert state.state_error is not None
 	assert 'no element indices are safe to use' in state.state_error
-	assert browser_session._cached_browser_state_summary is state
+	assert browser_session.dom_state.cached_browser_state_summary is state
 
 
 async def test_fresh_state_after_timeout_repopulates_selector_map(httpserver, browser_session: BrowserSession, monkeypatch):
@@ -167,14 +167,14 @@ async def test_fresh_state_after_timeout_repopulates_selector_map(httpserver, br
 		timed_out_state = await browser_session.get_browser_state_summary(include_screenshot=False)
 
 	assert timed_out_state.dom_state.selector_map == {}
-	assert await browser_session.get_selector_map() == {}
+	assert await browser_session.dom_state.get_selector_map() == {}
 
 	recovered_state = await browser_session.get_browser_state_summary(include_screenshot=False)
 	recovered_nodes = recovered_state.dom_state.selector_map
 	continue_index = next(index for index, node in recovered_nodes.items() if node.attributes.get('id') == 'continue')
 
 	assert recovered_state.state_error is None
-	assert await browser_session.get_dom_element_by_index(continue_index) is recovered_nodes[continue_index]
+	assert await browser_session.dom_state.get_dom_element_by_index(continue_index) is recovered_nodes[continue_index]
 
 
 async def test_initial_state_timeout_still_returns_model_visible_state(browser_session: BrowserSession, monkeypatch):
@@ -184,7 +184,7 @@ async def test_initial_state_timeout_still_returns_model_visible_state(browser_s
 		async def event_result(self, **_kwargs):
 			raise TimeoutError
 
-	assert browser_session._cached_browser_state_summary is None
+	assert browser_session.dom_state.cached_browser_state_summary is None
 	monkeypatch.setattr(browser_session.event_bus, 'dispatch', lambda _event: TimedOutStateEvent())
 
 	state = await browser_session.get_browser_state_summary(include_screenshot=True)

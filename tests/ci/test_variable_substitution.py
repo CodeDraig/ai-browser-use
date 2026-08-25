@@ -48,7 +48,7 @@ def test_substitute_single_variable(mock_llm):
 	)
 
 	# Substitute the email
-	modified_history = agent._substitute_variables_in_history(
+	modified_history = agent._history_replay._substitute_variables_in_history(
 		history,  # type: ignore[arg-type]
 		{'email': 'new@example.com'},
 	)
@@ -73,7 +73,7 @@ def test_substitute_multiple_variables(mock_llm):
 	)
 
 	# Substitute all variables
-	modified_history = agent._substitute_variables_in_history(
+	modified_history = agent._history_replay._substitute_variables_in_history(
 		history,  # type: ignore[arg-type]
 		{
 			'email': 'new@example.com',
@@ -105,7 +105,7 @@ def test_substitute_partial_variables(mock_llm):
 	)
 
 	# Substitute only email
-	modified_history = agent._substitute_variables_in_history(
+	modified_history = agent._history_replay._substitute_variables_in_history(
 		history,  # type: ignore[arg-type]
 		{'email': 'new@example.com'},
 	)
@@ -131,7 +131,7 @@ def test_substitute_nonexistent_variable(mock_llm):
 	)
 
 	# Try to substitute a variable that doesn't exist
-	modified_history = agent._substitute_variables_in_history(
+	modified_history = agent._history_replay._substitute_variables_in_history(
 		history,  # type: ignore[arg-type]
 		{'nonexistent_var': 'some_value'},
 	)
@@ -158,7 +158,7 @@ def test_substitute_in_nested_dict(mock_llm):
 	history = create_mock_history([(complex_action, element)])
 
 	# Substitute the email
-	modified_history = agent._substitute_variables_in_history(
+	modified_history = agent._history_replay._substitute_variables_in_history(
 		history,  # type: ignore[arg-type]
 		{'email': 'new@example.com'},
 	)
@@ -184,7 +184,7 @@ def test_substitute_in_list(mock_llm):
 	)
 
 	# Substitute the email
-	modified_history = agent._substitute_variables_in_history(
+	modified_history = agent._history_replay._substitute_variables_in_history(
 		history,  # type: ignore[arg-type]
 		{'email': 'new@example.com'},
 	)
@@ -216,7 +216,7 @@ def test_substitute_preserves_original_history(mock_llm):
 	original_value = vars(original_action)['input']['text']
 
 	# Substitute
-	agent._substitute_variables_in_history(history, {'email': 'new@example.com'})  # type: ignore[arg-type]
+	agent._history_replay._substitute_variables_in_history(history, {'email': 'new@example.com'})  # type: ignore[arg-type]
 
 	# Check that original history is unchanged
 	current_value = vars(original_action)['input']['text']
@@ -237,7 +237,7 @@ def test_substitute_empty_variables(mock_llm):
 	)
 
 	# Substitute with empty dict
-	modified_history = agent._substitute_variables_in_history(history, {})  # type: ignore[arg-type]
+	modified_history = agent._history_replay._substitute_variables_in_history(history, {})  # type: ignore[arg-type]
 
 	# Check that nothing changed
 	action = modified_history.history[0].model_output.action[0]  # type: ignore[attr-defined]
@@ -259,7 +259,7 @@ def test_substitute_same_value_multiple_times(mock_llm):
 	)
 
 	# Substitute the email
-	modified_history = agent._substitute_variables_in_history(
+	modified_history = agent._history_replay._substitute_variables_in_history(
 		history,  # type: ignore[arg-type]
 		{'email': 'new@example.com'},
 	)

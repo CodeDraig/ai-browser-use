@@ -226,7 +226,7 @@ async def main():
 		# Clean up
 		logger.info('🧹 Cleaning up...')
 		try:
-			await browser.stop()
+			await browser.kill()
 			logger.info('✅ Browser session stopped')
 		except Exception as e:
 			logger.error(f'❌ Error stopping browser: {e}')

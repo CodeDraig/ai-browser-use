@@ -737,7 +737,7 @@ class BrowserUseServer:
 			return 'Error: Provide either index or both coordinate_x and coordinate_y'
 
 		# Get the element
-		element = await self.browser_session.get_dom_element_by_index(index)
+		element = await self.browser_session.dom_state.get_dom_element_by_index(index)
 		if not element:
 			return f'Element with index {index} not found'
 
@@ -783,7 +783,7 @@ class BrowserUseServer:
 		if not self.browser_session:
 			return 'Error: No browser session active'
 
-		element = await self.browser_session.get_dom_element_by_index(index)
+		element = await self.browser_session.dom_state.get_dom_element_by_index(index)
 		if not element:
 			return f'Element with index {index} not found'
 
@@ -1004,10 +1004,7 @@ class BrowserUseServer:
 	async def _close_browser(self) -> str:
 		"""Close the browser session."""
 		if self.browser_session:
-			from browser_use.browser.events import BrowserStopEvent
-
-			event = self.browser_session.event_bus.dispatch(BrowserStopEvent())
-			await event
+			await self.browser_session.kill()
 			self.browser_session = None
 			self.tools = None
 			return 'Browser closed'
@@ -1031,7 +1028,7 @@ class BrowserUseServer:
 
 		from browser_use.browser.events import SwitchTabEvent
 
-		target_id = await self.browser_session.get_target_id_from_tab_id(tab_id)
+		target_id = await self.browser_session.session_manager.get_target_id_from_tab_id(tab_id)
 		event = self.browser_session.event_bus.dispatch(SwitchTabEvent(target_id=target_id))
 		await event
 		state = await self.browser_session.get_browser_state_summary()
@@ -1044,7 +1041,7 @@ class BrowserUseServer:
 
 		from browser_use.browser.events import CloseTabEvent
 
-		target_id = await self.browser_session.get_target_id_from_tab_id(tab_id)
+		target_id = await self.browser_session.session_manager.get_target_id_from_tab_id(tab_id)
 		event = self.browser_session.event_bus.dispatch(CloseTabEvent(target_id=target_id))
 		await event
 		current_url = await self.browser_session.get_current_page_url()
@@ -1104,7 +1101,7 @@ class BrowserUseServer:
 			if hasattr(session, 'kill'):
 				await session.kill()
 			elif hasattr(session, 'close'):
-				await session.close()
+				await session.stop()
 
 			# Remove from tracking
 			del self.active_sessions[session_id]

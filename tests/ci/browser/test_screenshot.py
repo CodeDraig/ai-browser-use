@@ -73,8 +73,11 @@ async def test_basic_screenshots(browser_session: BrowserSession, httpserver):
 	data = await browser_session.take_screenshot(full_page=False)
 	assert data, 'Viewport screenshot returned no data'
 
-	element = await browser_session.screenshot_element('h1')
-	assert element, 'Element screenshot returned no data'
+	page = await browser_session.must_get_current_page()
+	elements = await page.get_elements_by_css_selector('h1')
+	assert len(elements) == 1
+	element_data = await elements[0].screenshot()
+	assert element_data, 'Element screenshot returned no data'
 
 
 async def test_agent_screenshot_with_vision_enabled(browser_session, base_url):

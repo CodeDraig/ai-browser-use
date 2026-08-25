@@ -64,7 +64,7 @@ async def _drive_browser_briefly(bs: BrowserSession, url: str, ticks: int = 8) -
 
 async def test_start_stop_recording_produces_video(browser_session: BrowserSession, page_url: str, tmp_path: Path):
 	"""start_recording → activity → stop_recording should write a valid MP4."""
-	watchdog = browser_session._recording_watchdog
+	watchdog = browser_session.watchdogs.recording
 	assert watchdog is not None, 'BrowserSession should always attach a RecordingWatchdog'
 
 	out_path = tmp_path / 'session.mp4'
@@ -92,7 +92,7 @@ async def test_start_stop_recording_produces_video(browser_session: BrowserSessi
 
 
 async def test_start_recording_twice_raises(browser_session: BrowserSession, tmp_path: Path):
-	watchdog = browser_session._recording_watchdog
+	watchdog = browser_session.watchdogs.recording
 	assert watchdog is not None
 
 	await watchdog.start_recording(tmp_path / 'first.mp4')
@@ -104,7 +104,7 @@ async def test_start_recording_twice_raises(browser_session: BrowserSession, tmp
 
 
 async def test_stop_without_start_returns_none(browser_session: BrowserSession):
-	watchdog = browser_session._recording_watchdog
+	watchdog = browser_session.watchdogs.recording
 	assert watchdog is not None
 	assert await watchdog.stop_recording() is None
 
@@ -117,7 +117,7 @@ async def test_on_browser_connected_degrades_gracefully_when_recording_fails(
 	from browser_use.browser.events import BrowserConnectedEvent
 	from browser_use.browser.watchdogs import recording_watchdog as rw_mod
 
-	watchdog = browser_session._recording_watchdog
+	watchdog = browser_session.watchdogs.recording
 	assert watchdog is not None
 
 	async def fake_start_recording(self: Any, *_args: Any, **_kwargs: Any) -> Path:
@@ -138,7 +138,7 @@ async def test_profile_record_video_dir_still_works(page_url: str, tmp_path: Pat
 	)
 	await session.start()
 	try:
-		watchdog = session._recording_watchdog
+		watchdog = session.watchdogs.recording
 		assert watchdog is not None
 		# on_BrowserConnectedEvent should have auto-started recording via the watchdog
 		assert watchdog.is_recording, 'profile.record_video_dir should have auto-started recording'

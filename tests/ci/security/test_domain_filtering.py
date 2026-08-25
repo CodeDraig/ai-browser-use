@@ -658,7 +658,7 @@ class TestDomainListOptimization:
 		profile = BrowserProfile(allowed_domains=['allowed.test'], headless=True, user_data_dir=None)
 		browser_session = BrowserSession(browser_profile=profile)
 		browser_session.agent_focus_target_id = 'target'
-		browser_session.session_manager = SimpleNamespace(
+		browser_session._session_manager = SimpleNamespace(
 			get_target=lambda _target_id: SimpleNamespace(url='https://allowed.test/start')
 		)
 		dispatch = AsyncMock()

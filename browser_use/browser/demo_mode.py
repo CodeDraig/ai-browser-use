@@ -893,7 +893,7 @@ class DemoMode:
 """.strip()
 
 	async def _inject_into_open_pages(self, script: str) -> None:
-		targets = await self.session._cdp_get_all_pages(  # - intentional private access
+		targets = await self.session.session_manager.get_all_pages(
 			include_http=True,
 			include_about=True,
 			include_pages=True,

@@ -190,7 +190,7 @@ class TestAutocompleteInteraction:
 		await asyncio.sleep(0.3)
 		await browser_session.get_browser_state_summary()
 
-		input_index = await browser_session.get_index_by_id('search')
+		input_index = await browser_session.dom_state.get_index_by_id('search')
 		assert input_index is not None, 'Could not find search input'
 
 		result = await execute_registered_action(tools, 'input', index=input_index, text='hello', browser_session=browser_session)
@@ -209,7 +209,7 @@ class TestAutocompleteInteraction:
 		await asyncio.sleep(0.3)
 		await browser_session.get_browser_state_summary()
 
-		combo_index = await browser_session.get_index_by_id('combo')
+		combo_index = await browser_session.dom_state.get_index_by_id('combo')
 		assert combo_index is not None, 'Could not find combobox input'
 
 		result = await execute_registered_action(tools, 'input', index=combo_index, text='test', browser_session=browser_session)
@@ -228,7 +228,7 @@ class TestAutocompleteInteraction:
 		await asyncio.sleep(0.3)
 		await browser_session.get_browser_state_summary()
 
-		city_index = await browser_session.get_index_by_id('city')
+		city_index = await browser_session.dom_state.get_index_by_id('city')
 		assert city_index is not None, 'Could not find datalist input'
 
 		result = await execute_registered_action(tools, 'input', index=city_index, text='New', browser_session=browser_session)
@@ -247,7 +247,7 @@ class TestAutocompleteInteraction:
 		await asyncio.sleep(0.3)
 		await browser_session.get_browser_state_summary()
 
-		plain_index = await browser_session.get_index_by_id('plain')
+		plain_index = await browser_session.dom_state.get_index_by_id('plain')
 		assert plain_index is not None, 'Could not find plain input'
 
 		result = await execute_registered_action(tools, 'input', index=plain_index, text='hello', browser_session=browser_session)
@@ -266,7 +266,7 @@ class TestAutocompleteInteraction:
 		await asyncio.sleep(0.3)
 		await browser_session.get_browser_state_summary()
 
-		input_index = await browser_session.get_index_by_id('search')
+		input_index = await browser_session.dom_state.get_index_by_id('search')
 		assert input_index is not None, 'Could not find search input'
 
 		# Use tools.act() with sensitive_data to trigger the sensitive code path
@@ -293,7 +293,7 @@ class TestAutocompleteInteraction:
 		await asyncio.sleep(0.3)
 		await browser_session.get_browser_state_summary()
 
-		idx = await browser_session.get_index_by_id('prefilled')
+		idx = await browser_session.dom_state.get_index_by_id('prefilled')
 		assert idx is not None, 'Could not find prefilled input'
 
 		result = await execute_registered_action(tools, 'input', index=idx, text='new value', browser_session=browser_session)
@@ -318,7 +318,7 @@ class TestAutocompleteInteraction:
 		await asyncio.sleep(0.3)
 		await browser_session.get_browser_state_summary()
 
-		idx = await browser_session.get_index_by_id('prefilled')
+		idx = await browser_session.dom_state.get_index_by_id('prefilled')
 		assert idx is not None, 'Could not find prefilled input'
 
 		result = await execute_registered_action(
@@ -345,7 +345,7 @@ class TestAutocompleteInteraction:
 		await asyncio.sleep(0.3)
 		await browser_session.get_browser_state_summary()
 
-		idx = await browser_session.get_index_by_id('sticky')
+		idx = await browser_session.dom_state.get_index_by_id('sticky')
 		assert idx is not None, 'Could not find sticky input'
 
 		result = await execute_registered_action(tools, 'input', index=idx, text='typed_text', browser_session=browser_session)
@@ -376,7 +376,7 @@ class TestAutocompleteInteraction:
 		)
 		await asyncio.sleep(0.3)
 		await browser_session.get_browser_state_summary()
-		combo_idx = await browser_session.get_index_by_id('combo')
+		combo_idx = await browser_session.dom_state.get_index_by_id('combo')
 		assert combo_idx is not None
 
 		t0 = time.monotonic()
@@ -395,7 +395,7 @@ class TestAutocompleteInteraction:
 		)
 		await asyncio.sleep(0.3)
 		await browser_session.get_browser_state_summary()
-		city_idx = await browser_session.get_index_by_id('city')
+		city_idx = await browser_session.dom_state.get_index_by_id('city')
 		assert city_idx is not None
 
 		t0 = time.monotonic()

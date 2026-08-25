@@ -363,7 +363,7 @@ class TestToolsIntegration:
 		await browser_session.get_browser_state_summary()
 
 		# Get the selector map
-		selector_map = await browser_session.get_selector_map()
+		selector_map = await browser_session.dom_state.get_selector_map()
 
 		# Find the dropdown element in the selector map
 		dropdown_index = None
@@ -477,7 +477,7 @@ class TestToolsIntegration:
 		await browser_session.get_browser_state_summary()
 
 		# Now get the selector map which should contain our dropdown
-		selector_map = await browser_session.get_selector_map()
+		selector_map = await browser_session.dom_state.get_selector_map()
 
 		# Find the dropdown element in the selector map
 		dropdown_index = None

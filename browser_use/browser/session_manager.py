@@ -8,12 +8,37 @@ import asyncio
 from collections import deque
 from typing import TYPE_CHECKING, Any
 
+from cdp_use import CDPClient
+from cdp_use.cdp.fetch import EnableParameters, RequestPattern, RequestPausedEvent
 from cdp_use.cdp.target import AttachedToTargetEvent, DetachedFromTargetEvent, SessionID, TargetID
+from pydantic import BaseModel, ConfigDict, PrivateAttr
 
+from browser_use.dom.views import EnhancedDOMTreeNode, TargetInfo
 from browser_use.runtime import create_task_with_error_handling
+from browser_use.security import is_new_tab_page, is_url_allowed_by_policy, url_policy_configured
 
 if TYPE_CHECKING:
-	from browser_use.browser.session import BrowserSession, CDPSession, Target
+	from browser_use.browser.session import BrowserSession
+
+
+class Target(BaseModel):
+	"""Browser target tracked by SessionManager."""
+
+	model_config = ConfigDict(arbitrary_types_allowed=True, revalidate_instances='never')
+	target_id: TargetID
+	target_type: str
+	url: str = 'about:blank'
+	title: str = 'Unknown title'
+
+
+class CDPSession(BaseModel):
+	"""CDP communication channel tracked by SessionManager."""
+
+	model_config = ConfigDict(arbitrary_types_allowed=True, revalidate_instances='never')
+	cdp_client: CDPClient
+	target_id: TargetID
+	session_id: SessionID
+	_lifecycle_events: Any = PrivateAttr(default=None)
 
 
 class SessionManager:
@@ -29,6 +54,10 @@ class SessionManager:
 
 	SessionManager is the SINGLE SOURCE OF TRUTH for all targets and sessions.
 	"""
+
+	_TARGET_CLOSE_ATTEMPTS = 2
+	_TARGET_CLOSE_CONFIRMATION_TIMEOUT = 1.0
+	_TARGET_CLOSE_POLL_INTERVAL = 0.05
 
 	def __init__(self, browser_session: 'BrowserSession'):
 		self.browser_session = browser_session
@@ -51,9 +80,15 @@ class SessionManager:
 		# CDP method, so per-session handler registrations would replace each other and
 		# leave every tab but the most recently attached one without lifecycle events.
 		self._lifecycle_events: dict[TargetID, deque[dict[str, Any]]] = {}
+		self._main_frame_ids: dict[SessionID, str] = {}
+		self._new_page_targets: set[TargetID] = set()
+		self._blocked_navigation_urls: dict[TargetID, str] = {}
+		self._policy_setup_failures: dict[TargetID, str] = {}
+		self._fetch_sessions: dict[TargetID, SessionID] = {}
 
 		self._lock = asyncio.Lock()
 		self._recovery_lock = asyncio.Lock()
+		self._fetch_setup_lock = asyncio.Lock()
 
 		# Focus recovery coordination - event-driven instead of polling
 		self._recovery_in_progress: bool = False
@@ -118,23 +153,680 @@ class SessionManager:
 			target_id = self.get_target_id_from_session_id(session_id)
 			if not target_id:
 				return
+			event_name = event.get('name', 'unknown')
 			self.get_lifecycle_events(target_id).append(
 				{
-					'name': event.get('name', 'unknown'),
+					'name': event_name,
 					'loaderId': event.get('loaderId'),
 					'timestamp': asyncio.get_event_loop().time(),
 				}
+			)
+			# Keep a newly attached page marked through its entire redirect chain.
+			# Clearing on the first allowed Fetch request would make a blocked
+			# redirect destination look like navigation in an existing tab.
+			if event_name == 'load':
+				target = self.get_target(target_id)
+				if target is not None and not is_new_tab_page(target.url):
+					self._new_page_targets.discard(target_id)
+
+		def on_request_paused(event: RequestPausedEvent, session_id: SessionID | None = None):
+			# cdp-use stores one callback per CDP method. Keep Fetch routing here so
+			# URL policy and authenticated-proxy handling cannot replace each other.
+			create_task_with_error_handling(
+				self._handle_request_paused(event, session_id),
+				name='handle_request_paused',
+				logger_instance=self.logger,
+				suppress_exceptions=True,
 			)
 
 		cdp_client.register.Target.attachedToTarget(on_attached)
 		cdp_client.register.Target.detachedFromTarget(on_detached)
 		cdp_client.register.Target.targetInfoChanged(on_target_info_changed)
 		cdp_client.register.Page.lifecycleEvent(on_lifecycle_event)
+		cdp_client.register.Fetch.requestPaused(on_request_paused)
 
 		self.logger.debug('[SessionManager] Event monitoring started')
 
 		# Discover and initialize ALL existing targets
 		await self._initialize_existing_targets()
+
+	@property
+	def url_policy_active(self) -> bool:
+		"""Whether top-level navigation must be intercepted for this profile."""
+		profile = self.browser_session.browser_profile
+		return url_policy_configured(
+			allowed_domains=profile.allowed_domains,
+			prohibited_domains=profile.prohibited_domains,
+			block_ip_addresses=profile.block_ip_addresses,
+		)
+
+	def _is_url_allowed(self, url: str) -> bool:
+		profile = self.browser_session.browser_profile
+		return is_url_allowed_by_policy(
+			url,
+			allowed_domains=profile.allowed_domains,
+			prohibited_domains=profile.prohibited_domains,
+			block_ip_addresses=profile.block_ip_addresses,
+			log_warnings=True,
+		)
+
+	def mark_new_page_target(self, target_id: TargetID) -> None:
+		"""Mark a caller-created blank target for blocked-tab containment."""
+		self._new_page_targets.add(target_id)
+
+	async def wait_for_policy_ready_page(self, target_id: TargetID, *, timeout: float = 2.0) -> 'CDPSession':
+		"""Wait until a page target has its top-frame Fetch gate installed.
+
+		A policy-enabled caller must not navigate a newly created target before
+		this succeeds. Setup failures close the target and surface a hard error so
+		no caller can accidentally continue with an ungated page.
+		"""
+		if not self.url_policy_active:
+			raise RuntimeError('wait_for_policy_ready_page() requires an active URL policy')
+
+		loop = asyncio.get_running_loop()
+		deadline = loop.time() + timeout
+		while loop.time() < deadline:
+			setup_failure = self._policy_setup_failures.get(target_id)
+			if setup_failure:
+				await self._remediate_blocked_navigation(target_id, 'about:blank', setup_failed=True)
+				raise RuntimeError(f'URL policy interception could not be installed for target {target_id}: {setup_failure}')
+
+			target = self._targets.get(target_id)
+			if target is not None and self._target_monitoring_ready(target_id, target.target_type):
+				fetch_session_id = self._fetch_sessions.get(target_id)
+				cdp_session = self._sessions.get(fetch_session_id) if fetch_session_id else None
+				if cdp_session is not None:
+					return cdp_session
+
+			await asyncio.sleep(0.05)
+
+		setup_failure = f'timed out after {timeout:.1f}s waiting for top-frame Fetch interception'
+		self._policy_setup_failures[target_id] = setup_failure
+		await self._remediate_blocked_navigation(target_id, 'about:blank', setup_failed=True)
+		raise RuntimeError(f'URL policy interception could not be installed for target {target_id}: {setup_failure}')
+
+	async def _continue_fetch_request(self, request_id: str, session_id: SessionID | None) -> None:
+		cdp_client = self.browser_session._cdp_client_root
+		if cdp_client is None:
+			return
+		try:
+			await cdp_client.send.Fetch.continueRequest(params={'requestId': request_id}, session_id=session_id)
+		except Exception as error:
+			# Detach races are normal after a tab closes.
+			self.logger.debug(f'[SessionManager] Could not continue Fetch request {request_id}: {error}')
+
+	async def _handle_request_paused(
+		self,
+		event: RequestPausedEvent,
+		session_id: SessionID | None,
+	) -> None:
+		"""Resolve every paused request once and gate top-level documents."""
+		request_id = event.get('requestId') or event.get('request_id')
+		if not request_id:
+			return
+
+		if not self.url_policy_active or not session_id or event.get('resourceType') != 'Document':
+			await self._continue_fetch_request(request_id, session_id)
+			return
+
+		target_id = self.get_target_id_from_session_id(session_id)
+		target = self.get_target(target_id) if target_id else None
+		main_frame_id = self._main_frame_ids.get(session_id)
+		frame_id = event.get('frameId')
+		if not target_id or not target or target.target_type not in ('page', 'tab'):
+			await self._continue_fetch_request(request_id, session_id)
+			return
+		if not main_frame_id:
+			# A page session is not safe to run under policy unless its top frame was
+			# identified before Fetch interception was enabled.
+			await self._fail_fetch_request(request_id, session_id)
+			await self._remediate_blocked_navigation(target_id, event['request']['url'], setup_failed=True)
+			return
+		if frame_id != main_frame_id:
+			# Subframes and subresources are deliberately outside this policy.
+			await self._continue_fetch_request(request_id, session_id)
+			return
+
+		url = event.get('request', {}).get('url', '')
+		if self._is_url_allowed(url):
+			self._blocked_navigation_urls.pop(target_id, None)
+			await self._continue_fetch_request(request_id, session_id)
+			return
+
+		# Failing the intercepted request prevents DNS, proxy, and destination
+		# traffic before containment changes the target state.
+		await self._fail_fetch_request(request_id, session_id)
+		await self._remediate_blocked_navigation(target_id, url)
+
+	async def _fail_fetch_request(self, request_id: str, session_id: SessionID) -> None:
+		cdp_client = self.browser_session._cdp_client_root
+		if cdp_client is None:
+			return
+		try:
+			await cdp_client.send.Fetch.failRequest(
+				params={'requestId': request_id, 'errorReason': 'BlockedByClient'},
+				session_id=session_id,
+			)
+		except Exception as error:
+			self.logger.debug(f'[SessionManager] Could not fail blocked Fetch request {request_id}: {error}')
+
+	async def _remediate_blocked_navigation(
+		self,
+		target_id: TargetID,
+		url: str,
+		*,
+		setup_failed: bool = False,
+		require_target_closed: bool = False,
+	) -> None:
+		"""Contain one blocked navigation, optionally requiring confirmed target closure."""
+		already_reported = self._blocked_navigation_urls.get(target_id) == url
+		if already_reported and not require_target_closed:
+			return
+
+		is_new_page = target_id in self._new_page_targets
+		if not already_reported:
+			self._blocked_navigation_urls[target_id] = url
+
+			from browser_use.browser.events import BrowserErrorEvent
+
+			error_type = 'TabCreationBlocked' if is_new_page else 'NavigationBlocked'
+			reason = 'policy_setup_failed' if setup_failed else 'not_in_allowed_domains'
+			self.browser_session.event_bus.dispatch(
+				BrowserErrorEvent(
+					error_type=error_type,
+					message=f'Navigation blocked to disallowed URL: {url}',
+					details={'url': url, 'target_id': target_id, 'reason': reason},
+				)
+			)
+
+		cdp_client = self.browser_session._cdp_client_root
+		if cdp_client is None:
+			if require_target_closed:
+				raise RuntimeError(
+					f'URL policy blocked {url}, but target {target_id} could not be confirmed closed: CDP client unavailable'
+				)
+			return
+		try:
+			if is_new_page or setup_failed:
+				if require_target_closed:
+					await self._close_target_with_confirmation(target_id, url)
+				else:
+					await cdp_client.send.Target.closeTarget(params={'targetId': target_id})
+				self.logger.warning(f'⛔️ Closed target blocked by URL policy: {url}')
+			else:
+				cdp_session = self._get_session_for_target(target_id)
+				if cdp_session:
+					await cdp_client.send.Page.navigate(
+						params={'url': 'about:blank'},
+						session_id=cdp_session.session_id,
+					)
+				self.logger.warning(f'⛔️ Replaced blocked top-level navigation with about:blank: {url}')
+		except Exception as error:
+			self.logger.warning(f'⛔️ Failed to contain blocked navigation to {url}: {type(error).__name__}: {error}')
+			if require_target_closed:
+				raise
+
+	async def _close_target_with_confirmation(self, target_id: TargetID, url: str) -> None:
+		"""Close one target and confirm disappearance from Chromium's target inventory."""
+		cdp_client = self.browser_session._cdp_client_root
+		if cdp_client is None:
+			raise RuntimeError(
+				f'URL policy blocked {url}, but target {target_id} could not be confirmed closed: CDP client unavailable'
+			)
+
+		last_close_error: Exception | None = None
+		last_inventory_error: Exception | None = None
+		loop = asyncio.get_running_loop()
+
+		for _attempt in range(self._TARGET_CLOSE_ATTEMPTS):
+			try:
+				await cdp_client.send.Target.closeTarget(params={'targetId': target_id})
+				last_close_error = None
+			except Exception as error:
+				last_close_error = error
+
+			deadline = loop.time() + self._TARGET_CLOSE_CONFIRMATION_TIMEOUT
+			while True:
+				try:
+					targets_result = await cdp_client.send.Target.getTargets()
+					last_inventory_error = None
+					if not any(target_info.get('targetId') == target_id for target_info in targets_result.get('targetInfos', [])):
+						return
+				except Exception as error:
+					last_inventory_error = error
+
+				if loop.time() >= deadline:
+					break
+				await asyncio.sleep(self._TARGET_CLOSE_POLL_INTERVAL)
+
+		details: list[str] = []
+		if last_close_error is not None:
+			details.append(f'last close error: {type(last_close_error).__name__}: {last_close_error}')
+		if last_inventory_error is not None:
+			details.append(f'last inventory error: {type(last_inventory_error).__name__}: {last_inventory_error}')
+		detail_suffix = f' ({"; ".join(details)})' if details else ''
+		raise RuntimeError(
+			f'URL policy blocked {url}, but target {target_id} could not be confirmed closed '
+			f'after {self._TARGET_CLOSE_ATTEMPTS} attempts{detail_suffix}'
+		)
+
+	async def get_target_id_from_tab_id(self, tab_id: str) -> TargetID:
+		"""Get the full-length TargetID from the truncated 4-char tab_id using SessionManager."""
+		for full_target_id in self.get_all_target_ids():
+			if full_target_id.endswith(tab_id):
+				if await self.is_target_valid(full_target_id):
+					return full_target_id
+				# Stale target - Chrome should have sent detach event
+				# If we're here, event listener will clean it up
+				self.logger.debug(f'Found stale target {full_target_id}, skipping')
+
+		raise ValueError(f'No TargetID found ending in tab_id=...{tab_id}')
+
+	async def get_all_pages(
+		self,
+		include_http: bool = True,
+		include_about: bool = True,
+		include_pages: bool = True,
+		include_iframes: bool = False,
+		include_workers: bool = False,
+		include_chrome: bool = False,
+		include_chrome_extensions: bool = False,
+		include_chrome_error: bool = False,
+	) -> list[TargetInfo]:
+		"""Get all browser pages/tabs using SessionManager (source of truth)."""
+		# Build TargetInfo dicts from SessionManager owned data (crystal clear ownership)
+		result = []
+		for target_id, target in self.get_all_targets().items():
+			# Create TargetInfo dict
+			target_info: TargetInfo = {
+				'targetId': target.target_id,
+				'type': target.target_type,
+				'title': target.title,
+				'url': target.url,
+				'attached': True,
+				'canAccessOpener': False,
+			}
+
+			# Apply filters
+			if self._is_valid_target(
+				target_info,
+				include_http=include_http,
+				include_about=include_about,
+				include_pages=include_pages,
+				include_iframes=include_iframes,
+				include_workers=include_workers,
+				include_chrome=include_chrome,
+				include_chrome_extensions=include_chrome_extensions,
+				include_chrome_error=include_chrome_error,
+			):
+				result.append(target_info)
+
+		return result
+
+	@staticmethod
+	def _is_valid_target(
+		target_info: TargetInfo,
+		include_http: bool = True,
+		include_chrome: bool = False,
+		include_chrome_extensions: bool = False,
+		include_chrome_error: bool = False,
+		include_about: bool = True,
+		include_iframes: bool = True,
+		include_pages: bool = True,
+		include_workers: bool = False,
+	) -> bool:
+		"""Check if a target should be processed.
+
+		Args:
+			target_info: Target info dict from CDP
+
+		Returns:
+			True if target should be processed, False if it should be skipped
+		"""
+		target_type = target_info.get('type', '')
+		url = target_info.get('url', '')
+
+		url_allowed, type_allowed = False, False
+
+		# Always allow new tab pages (chrome://new-tab-page/, chrome://newtab/, about:blank)
+		# so they can be redirected to about:blank in connect()
+		from browser_use.security import is_new_tab_page
+
+		if is_new_tab_page(url):
+			url_allowed = True
+
+		if url.startswith('chrome-error://') and include_chrome_error:
+			url_allowed = True
+
+		if url.startswith('chrome://') and include_chrome:
+			url_allowed = True
+
+		if url.startswith('chrome-extension://') and include_chrome_extensions:
+			url_allowed = True
+
+		# dont allow about:srcdoc! there are also other rare about: pages that we want to avoid
+		if url == 'about:blank' and include_about:
+			url_allowed = True
+
+		if (url.startswith('http://') or url.startswith('https://')) and include_http:
+			url_allowed = True
+
+		if target_type in ('service_worker', 'shared_worker', 'worker') and include_workers:
+			type_allowed = True
+
+		if target_type in ('page', 'tab') and include_pages:
+			type_allowed = True
+
+		if target_type in ('iframe', 'webview') and include_iframes:
+			type_allowed = True
+			# Chrome often reports empty URLs for cross-origin iframe targets (OOPIFs)
+			# initially via attachedToTarget, but they are still valid and accessible via CDP.
+			# Allow them through so get_all_frames() can resolve their frame trees.
+			if not url:
+				url_allowed = True
+
+		return url_allowed and type_allowed
+
+	async def get_all_frames(self) -> tuple[dict[str, dict], dict[str, str]]:
+		"""Get a complete frame hierarchy from all browser targets.
+
+		Returns:
+			Tuple of (all_frames, target_sessions) where:
+			- all_frames: dict mapping frame_id -> frame info dict with all metadata
+			- target_sessions: dict mapping target_id -> session_id for active sessions
+		"""
+		all_frames = {}  # frame_id -> FrameInfo dict
+		target_sessions = {}  # target_id -> session_id (keep sessions alive during collection)
+
+		# Check if cross-origin iframe support is enabled
+		include_cross_origin = self.browser_session.browser_profile.cross_origin_iframes
+
+		# Get all targets - only include iframes if cross-origin support is enabled
+		targets = await self.get_all_pages(
+			include_http=True,
+			include_about=True,
+			include_pages=True,
+			include_iframes=include_cross_origin,  # Only include iframe targets if flag is set
+			include_workers=False,
+			include_chrome=False,
+			include_chrome_extensions=False,
+			include_chrome_error=include_cross_origin,  # Only include error pages if cross-origin is enabled
+		)
+		all_targets = targets
+
+		# First pass: collect frame trees from ALL targets
+		for target in all_targets:
+			target_id = target['targetId']
+
+			# Skip iframe targets if cross-origin support is disabled
+			if not include_cross_origin and target.get('type') == 'iframe':
+				continue
+
+			# When cross-origin support is disabled, only process the current target
+			if not include_cross_origin:
+				# Only process the current focus target
+				if self.browser_session.agent_focus_target_id and target_id != self.browser_session.agent_focus_target_id:
+					continue
+				# Use the existing agent_focus target's session - use safe API with focus=False
+				try:
+					cdp_session = await self.browser_session.get_or_create_cdp_session(
+						self.browser_session.agent_focus_target_id, focus=False
+					)
+				except ValueError:
+					continue  # Skip if no session available
+			else:
+				# Get cached session for this target (don't change focus - iterating frames)
+				try:
+					cdp_session = await self.browser_session.get_or_create_cdp_session(target_id, focus=False)
+				except ValueError:
+					continue  # Target may have detached between discovery and session creation
+
+			if cdp_session:
+				target_sessions[target_id] = cdp_session.session_id
+
+				try:
+					# Try to get frame tree (not all target types support this)
+					frame_tree_result = await cdp_session.cdp_client.send.Page.getFrameTree(session_id=cdp_session.session_id)
+
+					# Process the frame tree recursively
+					def process_frame_tree(node, parent_frame_id=None):
+						"""Recursively process frame tree and add to all_frames."""
+						frame = node.get('frame', {})
+						current_frame_id = frame.get('id')
+
+						if current_frame_id:
+							# For iframe targets, check if the frame has a parentId field
+							# This indicates it's an OOPIF with a parent in another target
+							actual_parent_id = frame.get('parentId') or parent_frame_id
+
+							# Create frame info with all CDP response data plus our additions
+							frame_info = {
+								**frame,  # Include all original frame data: id, url, parentId, etc.
+								'frameTargetId': target_id,  # Target that can access this frame
+								'parentFrameId': actual_parent_id,  # Use parentId from frame if available
+								'childFrameIds': [],  # Will be populated below
+								'isCrossOrigin': False,  # Will be determined based on context
+								'isValidTarget': self._is_valid_target(
+									target,
+									include_http=True,
+									include_about=True,
+									include_pages=True,
+									include_iframes=True,
+									include_workers=False,
+									include_chrome=False,  # chrome://newtab, chrome://settings, etc. are not valid frames we can control (for sanity reasons)
+									include_chrome_extensions=False,  # chrome-extension://
+									include_chrome_error=False,  # chrome-error://  (e.g. when iframes fail to load or are blocked by uBlock Origin)
+								),
+							}
+
+							# Check if frame is cross-origin based on crossOriginIsolatedContextType
+							cross_origin_type = frame.get('crossOriginIsolatedContextType')
+							if cross_origin_type and cross_origin_type != 'NotIsolated':
+								frame_info['isCrossOrigin'] = True
+
+							# For iframe targets, the frame itself is likely cross-origin
+							if target.get('type') == 'iframe':
+								frame_info['isCrossOrigin'] = True
+
+							# Skip cross-origin frames if support is disabled
+							if not include_cross_origin and frame_info.get('isCrossOrigin'):
+								return  # Skip this frame and its children
+
+							# Add child frame IDs (note: OOPIFs won't appear here)
+							child_frames = node.get('childFrames', [])
+							for child in child_frames:
+								child_frame = child.get('frame', {})
+								child_frame_id = child_frame.get('id')
+								if child_frame_id:
+									frame_info['childFrameIds'].append(child_frame_id)
+
+							# Store or merge frame info
+							if current_frame_id in all_frames:
+								# Frame already seen from another target, merge info
+								existing = all_frames[current_frame_id]
+								# If this is an iframe target, it has direct access to the frame
+								if target.get('type') == 'iframe':
+									existing['frameTargetId'] = target_id
+									existing['isCrossOrigin'] = True
+							else:
+								all_frames[current_frame_id] = frame_info
+
+							# Process child frames recursively (only if we're not skipping this frame)
+							if include_cross_origin or not frame_info.get('isCrossOrigin'):
+								for child in child_frames:
+									process_frame_tree(child, current_frame_id)
+
+					# Process the entire frame tree
+					process_frame_tree(frame_tree_result.get('frameTree', {}))
+
+				except Exception as e:
+					# Target doesn't support Page domain or has no frames
+					self.logger.debug(f'Failed to get frame tree for target {target_id}: {e}')
+
+		# Second pass: populate backend node IDs and parent target IDs
+		# Only do this if cross-origin support is enabled
+		if include_cross_origin:
+			await self._populate_frame_metadata(all_frames, target_sessions)
+
+		return all_frames, target_sessions
+
+	async def _populate_frame_metadata(self, all_frames: dict[str, dict], target_sessions: dict[str, str]) -> None:
+		"""Populate additional frame metadata like backend node IDs and parent target IDs.
+
+		Args:
+			all_frames: Frame hierarchy dict to populate
+			target_sessions: Active target sessions
+		"""
+		for frame_id_iter, frame_info in all_frames.items():
+			parent_frame_id = frame_info.get('parentFrameId')
+
+			if parent_frame_id and parent_frame_id in all_frames:
+				parent_frame_info = all_frames[parent_frame_id]
+				parent_target_id = parent_frame_info.get('frameTargetId')
+
+				# Store parent target ID
+				frame_info['parentTargetId'] = parent_target_id
+
+				# Try to get backend node ID from parent context
+				if parent_target_id in target_sessions:
+					assert parent_target_id is not None
+					parent_session_id = target_sessions[parent_target_id]
+					try:
+						# Enable DOM domain
+						await self.browser_session.cdp_client.send.DOM.enable(session_id=parent_session_id)
+
+						# Get frame owner info to find backend node ID
+						frame_owner = await self.browser_session.cdp_client.send.DOM.getFrameOwner(
+							params={'frameId': frame_id_iter}, session_id=parent_session_id
+						)
+
+						if frame_owner:
+							frame_info['backendNodeId'] = frame_owner.get('backendNodeId')
+							frame_info['nodeId'] = frame_owner.get('nodeId')
+
+					except Exception:
+						# Frame owner not available (likely cross-origin)
+						pass
+
+	async def find_frame_target(self, frame_id: str, all_frames: dict[str, dict] | None = None) -> dict | None:
+		"""Find the frame info for a specific frame ID.
+
+		Args:
+			frame_id: The frame ID to search for
+			all_frames: Optional pre-built frame hierarchy. If None, will call get_all_frames()
+
+		Returns:
+			Frame info dict if found, None otherwise
+		"""
+		if all_frames is None:
+			all_frames, _ = await self.get_all_frames()
+
+		return all_frames.get(frame_id)
+
+	async def cdp_client_for_target(self, target_id: TargetID) -> CDPSession:
+		return await self.browser_session.get_or_create_cdp_session(target_id, focus=False)
+
+	async def cdp_client_for_frame(self, frame_id: str) -> CDPSession:
+		"""Get a CDP client attached to the target containing the specified frame.
+
+		Builds a unified frame hierarchy from all targets to find the correct target
+		for any frame, including OOPIFs (Out-of-Process iframes).
+
+		Args:
+			frame_id: The frame ID to search for
+
+		Returns:
+			Tuple of (cdp_cdp_session, target_id) for the target containing the frame
+
+		Raises:
+			ValueError: If the frame is not found in any target
+		"""
+		# If cross-origin iframes are disabled, just use the main session
+		if not self.browser_session.browser_profile.cross_origin_iframes:
+			return await self.browser_session.get_or_create_cdp_session()
+
+		# Get complete frame hierarchy
+		all_frames, target_sessions = await self.get_all_frames()
+
+		# Find the requested frame
+		frame_info = await self.find_frame_target(frame_id, all_frames)
+
+		if frame_info:
+			target_id = frame_info.get('frameTargetId')
+
+			if target_id in target_sessions:
+				assert target_id is not None
+				# Use existing session
+				session_id = target_sessions[target_id]
+				# Return the client with session attached (don't change focus)
+				return await self.browser_session.get_or_create_cdp_session(target_id, focus=False)
+
+		# Frame not found
+		raise ValueError(f"Frame with ID '{frame_id}' not found in any target")
+
+	async def cdp_client_for_node(self, node: EnhancedDOMTreeNode) -> CDPSession:
+		"""Get CDP client for a specific DOM node based on its frame.
+
+		IMPORTANT: backend_node_id is only valid in the session where the DOM was captured.
+		We trust the node's session_id/frame_id/target_id instead of searching all sessions.
+		"""
+
+		# Strategy 1: If node has session_id, try to use that exact session (most specific)
+		if node.session_id:
+			try:
+				# Find the CDP session by session_id from SessionManager
+				cdp_session = self.get_session(node.session_id)
+				if cdp_session:
+					# Get target to log URL
+					target = self.get_target(cdp_session.target_id)
+					target_url = target.url if target else 'detached target'
+					self.logger.debug(f'✅ Using session from node.session_id for node {node.backend_node_id}: {target_url}')
+					return cdp_session
+			except Exception as e:
+				self.logger.debug(f'Failed to get session by session_id {node.session_id}: {e}')
+
+		# Strategy 2: If node has frame_id, use that frame's session
+		if node.frame_id:
+			try:
+				cdp_session = await self.cdp_client_for_frame(node.frame_id)
+				target = self.get_target(cdp_session.target_id)
+				target_url = target.url if target else 'detached target'
+				self.logger.debug(f'✅ Using session from node.frame_id for node {node.backend_node_id}: {target_url}')
+				return cdp_session
+			except Exception as e:
+				self.logger.debug(f'Failed to get session for frame {node.frame_id}: {e}')
+
+		# Strategy 3: If node has target_id, use that target's session
+		if node.target_id:
+			try:
+				cdp_session = await self.browser_session.get_or_create_cdp_session(target_id=node.target_id, focus=False)
+				target = self.get_target(cdp_session.target_id)
+				target_url = target.url if target else 'detached target'
+				self.logger.debug(f'✅ Using session from node.target_id for node {node.backend_node_id}: {target_url}')
+				return cdp_session
+			except Exception as e:
+				self.logger.debug(f'Failed to get session for target {node.target_id}: {e}')
+
+		# Strategy 4: Fallback to agent_focus_target_id (the page where agent is currently working)
+		if self.browser_session.agent_focus_target_id:
+			target = self.get_target(self.browser_session.agent_focus_target_id)
+			try:
+				# Use safe API with focus=False to avoid changing focus
+				cdp_session = await self.browser_session.get_or_create_cdp_session(
+					self.browser_session.agent_focus_target_id, focus=False
+				)
+				if target:
+					self.logger.warning(
+						f'⚠️ Node {node.backend_node_id} has no session/frame/target info. Using agent_focus session: {target.url}'
+					)
+				return cdp_session
+			except ValueError:
+				pass  # Fall through to last resort
+
+		# Last resort: use main session
+		self.logger.error(f'❌ No session info for node {node.backend_node_id} and no agent_focus available. Using main session.')
+		return await self.browser_session.get_or_create_cdp_session()
 
 	def get_lifecycle_events(self, target_id: TargetID) -> 'deque[dict[str, Any]]':
 		"""Get (creating if needed) the lifecycle event buffer for a target."""
@@ -213,6 +905,12 @@ class SessionManager:
 			self._sessions.clear()
 			self._target_sessions.clear()
 			self._session_to_target.clear()
+			self._lifecycle_events.clear()
+			self._main_frame_ids.clear()
+			self._new_page_targets.clear()
+			self._blocked_navigation_urls.clear()
+			self._policy_setup_failures.clear()
+			self._fetch_sessions.clear()
 
 		self.logger.info('[SessionManager] Cleared all owned data (targets, sessions, mappings)')
 
@@ -410,6 +1108,8 @@ class SessionManager:
 		target_type = event['targetInfo']['type']
 		target_info = event['targetInfo']
 		waiting_for_debugger = event.get('waitingForDebugger', False)
+		if waiting_for_debugger and target_type in ('page', 'tab') and self.url_policy_active:
+			self._new_page_targets.add(target_id)
 
 		self.logger.debug(
 			f'[SessionManager] Target attached: {target_id[:8]}... (session={session_id[:8]}..., '
@@ -433,8 +1133,6 @@ class SessionManager:
 			# Expected for short-lived targets (workers, temp iframes) that detach before this executes
 			if '-32001' not in error_str and 'Session with given id not found' not in error_str:
 				self.logger.debug(f'[SessionManager] Auto-attach failed for {target_type}: {e}')
-
-		from browser_use.browser.session import Target
 
 		async with self._lock:
 			# Track this session for the target
@@ -462,8 +1160,6 @@ class SessionManager:
 				existing_target.title = target_info.get('title', existing_target.title)
 
 		# Create CDPSession (communication channel)
-		from browser_use.browser.session import CDPSession
-
 		assert self.browser_session._cdp_client_root is not None, 'Root CDP client required'
 
 		cdp_session = CDPSession(
@@ -475,37 +1171,42 @@ class SessionManager:
 		# Add to sessions dict
 		self._sessions[session_id] = cdp_session
 
-		# If proxy auth is configured, enable Fetch auth handling on this session
-		# Avoids overwriting Target.attachedToTarget handlers elsewhere
-		try:
-			proxy_cfg = self.browser_session.browser_profile.proxy
-			username = proxy_cfg.username if proxy_cfg else None
-			password = proxy_cfg.password if proxy_cfg else None
-			if username and password:
-				await cdp_session.cdp_client.send.Fetch.enable(
-					params={'handleAuthRequests': True},
-					session_id=cdp_session.session_id,
-				)
-				self.logger.debug(f'[SessionManager] Fetch.enable(handleAuthRequests=True) on session {session_id[:8]}...')
-		except Exception as e:
-			self.logger.debug(f'[SessionManager] Fetch.enable on attached session failed: {type(e).__name__}: {e}')
-
 		self.logger.debug(
 			f'[SessionManager] Created session {session_id[:8]}... for target {target_id[:8]}... '
 			f'(total sessions: {len(self._sessions)})'
 		)
 
-		# Enable lifecycle events and network monitoring for page targets
-		if target_type in ('page', 'tab'):
-			await self._enable_page_monitoring(cdp_session)
+		# Enable lifecycle/network monitoring and the URL gate before a paused
+		# page is allowed to execute. Proxy-only non-page targets still need Fetch.
+		try:
+			if target_type in ('page', 'tab'):
+				await self._enable_page_monitoring(cdp_session)
+			else:
+				await self._enable_fetch_for_session(cdp_session, target_type=target_type)
+		except Exception as error:
+			policy_gate_missing = (
+				self.url_policy_active and target_type in ('page', 'tab') and target_id not in self._fetch_sessions
+			)
+			if policy_gate_missing:
+				self._policy_setup_failures[target_id] = f'{type(error).__name__}: {error}'
+				await self._remediate_blocked_navigation(target_id, target_info.get('url', ''), setup_failed=True)
+				return
+			# URL policy only governs page targets. Never strand workers or other
+			# unrelated targets at the debugger boundary when optional setup fails.
+			await self._resume_target_if_waiting(session_id, waiting_for_debugger)
+			raise
 
 		# Resume execution if waiting for debugger
-		if waiting_for_debugger:
-			try:
-				assert self.browser_session._cdp_client_root is not None
-				await self.browser_session._cdp_client_root.send.Runtime.runIfWaitingForDebugger(session_id=session_id)
-			except Exception as e:
-				self.logger.warning(f'[SessionManager] Failed to resume execution: {e}')
+		await self._resume_target_if_waiting(session_id, waiting_for_debugger)
+
+	async def _resume_target_if_waiting(self, session_id: SessionID, waiting_for_debugger: bool) -> None:
+		if not waiting_for_debugger:
+			return
+		try:
+			assert self.browser_session._cdp_client_root is not None
+			await self.browser_session._cdp_client_root.send.Runtime.runIfWaitingForDebugger(session_id=session_id)
+		except Exception as error:
+			self.logger.warning(f'[SessionManager] Failed to resume execution: {error}')
 
 	async def _handle_target_info_changed(self, event: dict) -> None:
 		"""Handle Target.targetInfoChanged event.
@@ -519,6 +1220,8 @@ class SessionManager:
 		if not target_id:
 			return
 
+		updated_url = target_info.get('url', '')
+		target_type: str | None = None
 		async with self._lock:
 			# Update target if it exists (source of truth for url/title)
 			if target_id in self._targets:
@@ -526,6 +1229,18 @@ class SessionManager:
 
 				target.title = target_info.get('title', target.title)
 				target.url = target_info.get('url', target.url)
+				target_type = target.target_type
+
+		# Fetch is the pre-request boundary. Target-info enforcement is a
+		# containment fallback for non-network schemes and unexpected CDP gaps.
+		if not self.url_policy_active or target_type not in ('page', 'tab') or not updated_url:
+			return
+		if self._is_url_allowed(updated_url):
+			if not is_new_tab_page(updated_url):
+				self._new_page_targets.discard(target_id)
+			self._blocked_navigation_urls.pop(target_id, None)
+			return
+		await self._remediate_blocked_navigation(target_id, updated_url)
 
 	async def _handle_target_detached(self, event: DetachedFromTargetEvent) -> None:
 		"""Handle Target.detachedFromTarget event.
@@ -548,8 +1263,15 @@ class SessionManager:
 		agent_focus_lost = False
 		target_fully_removed = False
 		target_type = None
+		fetch_owner_detached = False
 
 		async with self._lock:
+			tracked_target = self._targets.get(target_id)
+			target_type = tracked_target.target_type if tracked_target else None
+			fetch_owner_detached = self._fetch_sessions.get(target_id) == session_id
+			if fetch_owner_detached:
+				self._fetch_sessions.pop(target_id, None)
+
 			# Remove this session from target's session set
 			if target_id in self._target_sessions:
 				self._target_sessions[target_id].discard(session_id)
@@ -609,6 +1331,36 @@ class SessionManager:
 			# Remove from reverse mapping
 			if session_id in self._session_to_target:
 				del self._session_to_target[session_id]
+			self._main_frame_ids.pop(session_id, None)
+			if target_fully_removed:
+				self._new_page_targets.discard(target_id)
+				self._blocked_navigation_urls.pop(target_id, None)
+				self._policy_setup_failures.pop(target_id, None)
+				self._fetch_sessions.pop(target_id, None)
+
+		# Keep one Fetch owner when Chrome detaches one of several flattened
+		# sessions for a still-live target.
+		if fetch_owner_detached and not target_fully_removed and not self.browser_session._intentional_stop:
+			replacement_session = self._get_session_for_target(target_id)
+			try:
+				if replacement_session is None:
+					raise RuntimeError('no replacement CDP session is available')
+				await self._enable_fetch_for_session(
+					replacement_session,
+					target_type=target_type or 'unknown',
+				)
+			except Exception as error:
+				if self.url_policy_active and target_type in ('page', 'tab'):
+					self._policy_setup_failures[target_id] = f'{type(error).__name__}: {error}'
+					self._blocked_navigation_urls.pop(target_id, None)
+					target = self._targets.get(target_id)
+					await self._remediate_blocked_navigation(
+						target_id,
+						target.url if target else '',
+						setup_failed=True,
+					)
+				else:
+					self.logger.debug(f'[SessionManager] Could not rebind Fetch for {target_id}: {error}')
 
 		# Dispatch TabClosedEvent only for page/tab targets that are fully removed (not iframes/workers or partial detaches)
 		if target_fully_removed:
@@ -826,17 +1578,10 @@ class SessionManager:
 			while True:
 				ready_count = 0
 				for tid in target_ids_to_wait_for:
-					session = self._get_session_for_target(tid)
-					if session:
-						target = self._targets.get(tid)
-						target_type = target.target_type if target else 'unknown'
-						# For pages, verify monitoring is enabled
-						if target_type in ('page', 'tab'):
-							if hasattr(session, '_lifecycle_events') and session._lifecycle_events is not None:
-								ready_count += 1
-						else:
-							# Non-page targets don't need monitoring
-							ready_count += 1
+					target = self._targets.get(tid)
+					target_type = target.target_type if target else 'unknown'
+					if self._target_monitoring_ready(tid, target_type):
+						ready_count += 1
 
 				if ready_count == len(target_ids_to_wait_for):
 					ready_event.set()
@@ -856,26 +1601,58 @@ class SessionManager:
 			# Timeout - count what's ready
 			ready_count = 0
 			for tid in target_ids_to_wait_for:
-				session = self._get_session_for_target(tid)
-				if session:
-					target = self._targets.get(tid)
-					target_type = target.target_type if target else 'unknown'
-					# For pages, verify monitoring is enabled
-					if target_type in ('page', 'tab'):
-						if hasattr(session, '_lifecycle_events') and session._lifecycle_events is not None:
-							ready_count += 1
-					else:
-						# Non-page targets don't need monitoring
-						ready_count += 1
+				target = self._targets.get(tid)
+				target_type = target.target_type if target else 'unknown'
+				if self._target_monitoring_ready(tid, target_type):
+					ready_count += 1
 			self.logger.warning(
 				f'[SessionManager] Initialization timeout after 2.0s: {ready_count}/{len(target_ids_to_wait_for)} sessions ready'
 			)
+			if self.url_policy_active:
+				# A connected page without its Fetch gate would make the policy
+				# advisory. Ignore transient pages that have already disappeared,
+				# but reject any live page whose setup never completed.
+				try:
+					current_targets = (await cdp_client.send.Target.getTargets()).get('targetInfos', [])
+				except Exception:
+					current_targets = existing_targets
+				for target_info in current_targets:
+					if target_info.get('type') not in ('page', 'tab'):
+						continue
+					target_id = target_info['targetId']
+					if not self._target_monitoring_ready(target_id, target_info['type']):
+						self._policy_setup_failures.setdefault(
+							target_id,
+							'initialization timed out before Fetch was installed',
+						)
 		finally:
 			check_task.cancel()
 			try:
 				await check_task
 			except asyncio.CancelledError:
 				pass
+
+		if self.url_policy_active and self._policy_setup_failures:
+			failures = ', '.join(f'{target_id}: {error}' for target_id, error in self._policy_setup_failures.items())
+			raise RuntimeError(f'URL policy interception could not be installed: {failures}')
+
+	def _target_monitoring_ready(self, target_id: TargetID, target_type: str) -> bool:
+		"""Return whether any usable session owns the required target monitoring."""
+		sessions = [
+			self._sessions[session_id]
+			for session_id in self._target_sessions.get(target_id, set())
+			if session_id in self._sessions
+		]
+		if not sessions:
+			return False
+		if target_type not in ('page', 'tab'):
+			return True
+		if not any(session._lifecycle_events is not None for session in sessions):
+			return False
+		if not self.url_policy_active:
+			return True
+		fetch_session_id = self._fetch_sessions.get(target_id)
+		return fetch_session_id in self._main_frame_ids
 
 	async def _enable_page_monitoring(self, cdp_session: 'CDPSession') -> None:
 		"""Enable lifecycle events and network monitoring for a page target.
@@ -898,6 +1675,15 @@ class SessionManager:
 			# Enable network monitoring for networkIdle detection
 			await cdp_session.cdp_client.send.Network.enable(session_id=cdp_session.session_id)
 
+			if self.url_policy_active:
+				frame_tree = await cdp_session.cdp_client.send.Page.getFrameTree(session_id=cdp_session.session_id)
+				main_frame_id = frame_tree.get('frameTree', {}).get('frame', {}).get('id')
+				if not main_frame_id:
+					raise RuntimeError(f'Could not identify the top frame for target {cdp_session.target_id}')
+				self._main_frame_ids[cdp_session.session_id] = main_frame_id
+
+			await self._enable_fetch_for_session(cdp_session, target_type='page')
+
 			# Event storage and the Page.lifecycleEvent handler live in SessionManager
 			# (one global handler registered in start_monitoring, routed by session_id):
 			# cdp-use's registry is single-slot per method, so a per-session registration
@@ -916,3 +1702,37 @@ class SessionManager:
 				self.logger.warning(
 					f'[SessionManager] Failed to enable monitoring for target {cdp_session.target_id[:8]}...: {e}'
 				)
+				if self.url_policy_active:
+					raise
+
+	async def _enable_fetch_for_session(self, cdp_session: 'CDPSession', *, target_type: str) -> None:
+		"""Enable one target-scoped Fetch configuration for policy and proxy auth."""
+		proxy = self.browser_session.browser_profile.proxy
+		has_proxy_credentials = bool(proxy and proxy.username and proxy.password)
+		needs_policy = self.url_policy_active and target_type in ('page', 'tab')
+		if not has_proxy_credentials and not needs_policy:
+			return
+
+		params: EnableParameters = {'handleAuthRequests': has_proxy_credentials}
+		if needs_policy:
+			policy_patterns: list[RequestPattern] = [{'urlPattern': '*', 'resourceType': 'Document', 'requestStage': 'Request'}]
+			params['patterns'] = policy_patterns
+		elif has_proxy_credentials:
+			# Preserve the prior authenticated-proxy behavior. The centralized
+			# requestPaused handler immediately continues these requests.
+			params['patterns'] = [{'urlPattern': '*'}]
+
+		# Chrome permits multiple flattened CDP sessions for the same target. Fetch
+		# interception stacks across them, so enabling every session pauses one
+		# logical request repeatedly. Give each target exactly one Fetch owner.
+		async with self._fetch_setup_lock:
+			current_session_id = self._fetch_sessions.get(cdp_session.target_id)
+			if current_session_id is not None and current_session_id in self._sessions:
+				return
+			await cdp_session.cdp_client.send.Fetch.enable(params=params, session_id=cdp_session.session_id)
+			self._fetch_sessions[cdp_session.target_id] = cdp_session.session_id
+			self._policy_setup_failures.pop(cdp_session.target_id, None)
+		self.logger.debug(
+			f'[SessionManager] Fetch enabled for {target_type} session {cdp_session.session_id[:8]}... '
+			f'(policy={needs_policy}, proxy_auth={has_proxy_credentials})'
+		)

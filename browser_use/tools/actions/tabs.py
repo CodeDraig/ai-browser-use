@@ -23,7 +23,7 @@ def register_tab_actions(tools: 'Tools') -> None:
 	async def switch(params: SwitchTabAction, browser_session: BrowserSession):
 		# Simple switch tab logic
 		try:
-			target_id = await browser_session.get_target_id_from_tab_id(params.tab_id)
+			target_id = await browser_session.session_manager.get_target_id_from_tab_id(params.tab_id)
 
 			event = browser_session.event_bus.dispatch(SwitchTabEvent(target_id=target_id))
 			await event
@@ -48,7 +48,7 @@ def register_tab_actions(tools: 'Tools') -> None:
 	async def close(params: CloseTabAction, browser_session: BrowserSession):
 		# Simple close tab logic
 		try:
-			target_id = await browser_session.get_target_id_from_tab_id(params.tab_id)
+			target_id = await browser_session.session_manager.get_target_id_from_tab_id(params.tab_id)
 
 			# Dispatch close tab event - handle stale target IDs gracefully
 			event = browser_session.event_bus.dispatch(CloseTabEvent(target_id=target_id))

@@ -319,7 +319,7 @@ class TestBrowserContext:
 	# 	assert container_exists, 'Highlight container should exist before removal'
 
 	# 	# Call remove_highlights
-	# 	await browser_session.remove_highlights()
+	# 	await browser_session.dom_state.remove_highlights()
 
 	# 	# Verify the highlight container was removed
 	# 	container_exists_after = await browser_session.execute_javascript(

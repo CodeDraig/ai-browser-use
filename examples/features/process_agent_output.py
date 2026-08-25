@@ -48,7 +48,7 @@ async def main():
 		print('\nModel Outputs:')
 		pprint(history.model_outputs(), indent=4)
 	finally:
-		await browser_session.stop()
+		await browser_session.kill()
 
 
 if __name__ == '__main__':

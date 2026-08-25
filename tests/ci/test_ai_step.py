@@ -26,7 +26,7 @@ async def test_execute_ai_step_basic():
 
 	try:
 		# Execute _execute_ai_step with mock LLM
-		result = await agent._execute_ai_step(
+		result = await agent._history_replay._execute_ai_step(
 			query='Extract the main heading',
 			include_screenshot=False,
 			extract_links=False,
@@ -76,7 +76,7 @@ async def test_execute_ai_step_with_screenshot():
 
 	try:
 		# Execute _execute_ai_step with screenshot
-		result = await agent._execute_ai_step(
+		result = await agent._history_replay._execute_ai_step(
 			query='Analyze this page',
 			include_screenshot=True,
 			extract_links=False,
@@ -105,7 +105,7 @@ async def test_execute_ai_step_error_handling():
 
 	try:
 		# Execute _execute_ai_step - should return ActionResult with error
-		result = await agent._execute_ai_step(
+		result = await agent._history_replay._execute_ai_step(
 			query='Extract data',
 			include_screenshot=False,
 			ai_step_llm=mock_llm,

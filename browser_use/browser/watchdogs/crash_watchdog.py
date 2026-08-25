@@ -309,7 +309,7 @@ class CrashWatchdog(BaseWatchdog):
 			)
 
 		# Check browser process if we have PID
-		if self.browser_session._local_browser_watchdog and (proc := self.browser_session._local_browser_watchdog._subprocess):
+		if self.browser_session.watchdogs.local_browser and (proc := self.browser_session.watchdogs.local_browser._subprocess):
 			try:
 				if proc.status() in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):
 					self.logger.error(f'[CrashWatchdog] Browser process {proc.pid} has crashed')

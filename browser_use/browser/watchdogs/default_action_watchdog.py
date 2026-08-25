@@ -103,7 +103,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 			self.logger.debug(f'[ClickWithDownload] Download completed: {download_info["file_name"]}')
 
 		# Get the downloads watchdog and register direct callbacks
-		downloads_watchdog = self.browser_session._downloads_watchdog
+		downloads_watchdog = self.browser_session.watchdogs.downloads
 		self.logger.debug(f'[ClickWithDownload] downloads_watchdog={downloads_watchdog is not None}')
 		if downloads_watchdog:
 			self.logger.debug('[ClickWithDownload] Registering download callbacks...')
@@ -343,10 +343,10 @@ class DefaultActionWatchdog(BaseWatchdog):
 
 			# Use the provided node
 			element_node = event.node
-			index_for_logging = self.browser_session.get_selector_index(element_node)
+			index_for_logging = self.browser_session.dom_state.get_selector_index(element_node)
 
 			# Check if element is a file input (should not be clicked)
-			if self.browser_session.is_file_input(element_node):
+			if self.browser_session.dom_state.is_file_input(element_node):
 				msg = f'Index {index_for_logging} - has an element which opens file upload dialog. To upload files please use a specific function to upload files'
 				self.logger.info(f'{msg}')
 				return {'validation_error': msg}
@@ -401,7 +401,9 @@ class DefaultActionWatchdog(BaseWatchdog):
 				)
 
 			# Get element at coordinates for safety checks
-			element_node = await self.browser_session.get_dom_element_at_coordinates(event.coordinate_x, event.coordinate_y)
+			element_node = await self.browser_session.dom_state.get_dom_element_at_coordinates(
+				event.coordinate_x, event.coordinate_y
+			)
 			if element_node is None:
 				# No element found, click directly (with download detection)
 				self.logger.debug(
@@ -412,7 +414,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 				)
 
 			# Safety check: file input
-			if self.browser_session.is_file_input(element_node):
+			if self.browser_session.dom_state.is_file_input(element_node):
 				msg = f'Cannot click at ({event.coordinate_x}, {event.coordinate_y}) - element is a file input. To upload files please use upload_file action'
 				self.logger.info(f'{msg}')
 				return {'validation_error': msg}
@@ -451,7 +453,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 		try:
 			# Use the provided node
 			element_node = event.node
-			index_for_logging = self.browser_session.get_selector_index(element_node)
+			index_for_logging = self.browser_session.dom_state.get_selector_index(element_node)
 
 			# Check if this is index 0 or a falsy index - type to the page (whatever has focus)
 			if not element_node.backend_node_id or element_node.backend_node_id == 0:
@@ -518,8 +520,8 @@ class DefaultActionWatchdog(BaseWatchdog):
 		try:
 
 			def invalidate_dom_cache() -> None:
-				if self.browser_session._dom_watchdog:
-					self.browser_session._dom_watchdog.clear_cache()
+				if self.browser_session.watchdogs.dom:
+					self.browser_session.watchdogs.dom.clear_cache()
 
 			# Convert direction and amount to pixels
 			# Positive pixels = scroll down, negative = scroll up
@@ -528,7 +530,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 			# Element-specific scrolling if node is provided
 			if event.node is not None:
 				element_node = event.node
-				index_for_logging = self.browser_session.get_selector_index(element_node)
+				index_for_logging = self.browser_session.dom_state.get_selector_index(element_node)
 
 				# Check if the element is an iframe
 				is_iframe = element_node.tag_name and element_node.tag_name.upper() == 'IFRAME'
@@ -709,7 +711,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 			# Check if element is a file input or select dropdown - these should not be clicked
 			tag_name = element_node.tag_name.lower() if element_node.tag_name else ''
 			element_type = element_node.attributes.get('type', '').lower() if element_node.attributes else ''
-			selector_index = self.browser_session.get_selector_index(element_node)
+			selector_index = self.browser_session.dom_state.get_selector_index(element_node)
 
 			if tag_name == 'select':
 				msg = f'Cannot click on <select> elements. Use dropdown_options(index={selector_index}) action instead.'
@@ -722,7 +724,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 				return {'validation_error': msg}
 
 			# Get CDP client
-			cdp_session = await self.browser_session.cdp_client_for_node(element_node)
+			cdp_session = await self.browser_session.session_manager.cdp_client_for_node(element_node)
 
 			# Get the correct session ID for the element's frame
 			session_id = cdp_session.session_id
@@ -772,7 +774,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 				self.logger.debug(f'Failed to scroll element into view: {e}')
 
 			# Get element coordinates using the unified method AFTER scrolling
-			element_rect = await self.browser_session.get_element_coordinates(backend_node_id, cdp_session)
+			element_rect = await self.browser_session.dom_state.get_element_coordinates(backend_node_id, cdp_session)
 
 			# Convert rect to quads format if we got coordinates
 			quads = []
@@ -1041,7 +1043,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 			raise e
 		except Exception as e:
 			# Extract key element info for error message
-			selector_index = self.browser_session.get_selector_index(element_node)
+			selector_index = self.browser_session.dom_state.get_selector_index(element_node)
 			element_info = f'<{element_node.tag_name or "unknown"}'
 			if selector_index:
 				element_info += f' index={selector_index}'
@@ -1768,7 +1770,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 			# session_id = await self._get_session_id_for_element(element_node)
 
 			# cdp_session = await self.browser_session.get_or_create_cdp_session(target_id=element_node.target_id, focus=True)
-			cdp_session = await self.browser_session.cdp_client_for_node(element_node)
+			cdp_session = await self.browser_session.session_manager.cdp_client_for_node(element_node)
 
 			# Get element info
 			backend_node_id = element_node.backend_node_id
@@ -1804,7 +1806,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 			object_id = result['object']['objectId']
 
 			# Get current coordinates using unified method
-			coords = await self.browser_session.get_element_coordinates(backend_node_id, cdp_session)
+			coords = await self.browser_session.dom_state.get_element_coordinates(backend_node_id, cdp_session)
 			if coords:
 				center_x = coords.x + coords.width / 2
 				center_y = coords.y + coords.height / 2
@@ -2216,8 +2218,8 @@ class DefaultActionWatchdog(BaseWatchdog):
 			session_id = cdp_session.session_id
 
 			# Get viewport dimensions from cached value if available
-			if self.browser_session._original_viewport_size:
-				viewport_width, viewport_height = self.browser_session._original_viewport_size
+			if self.browser_session.dom_state.original_viewport_size:
+				viewport_width, viewport_height = self.browser_session.dom_state.original_viewport_size
 			else:
 				# Fallback: query layout metrics
 				layout_metrics = await cdp_client.send.Page.getLayoutMetrics(session_id=session_id)
@@ -2255,7 +2257,7 @@ class DefaultActionWatchdog(BaseWatchdog):
 	async def _scroll_element_container(self, element_node, pixels: int) -> bool:
 		"""Try to scroll an element's container using CDP."""
 		try:
-			cdp_session = await self.browser_session.cdp_client_for_node(element_node)
+			cdp_session = await self.browser_session.session_manager.cdp_client_for_node(element_node)
 
 			# Check if this is an iframe - if so, scroll its content directly
 			if element_node.tag_name and element_node.tag_name.upper() == 'IFRAME':
@@ -2679,10 +2681,10 @@ class DefaultActionWatchdog(BaseWatchdog):
 		try:
 			# Use the provided node
 			element_node = event.node
-			index_for_logging = self.browser_session.get_selector_index(element_node)
+			index_for_logging = self.browser_session.dom_state.get_selector_index(element_node)
 
 			# Check if it's a file input
-			if not self.browser_session.is_file_input(element_node):
+			if not self.browser_session.dom_state.is_file_input(element_node):
 				msg = f'Upload failed - element {index_for_logging} is not a file input.'
 				raise BrowserError(message=msg, long_term_memory=msg)
 
@@ -2811,10 +2813,10 @@ class DefaultActionWatchdog(BaseWatchdog):
 		try:
 			# Use the provided node
 			element_node = event.node
-			index_for_logging = self.browser_session.get_selector_index(element_node)
+			index_for_logging = self.browser_session.dom_state.get_selector_index(element_node)
 
 			# Get CDP session for this node
-			cdp_session = await self.browser_session.cdp_client_for_node(element_node)
+			cdp_session = await self.browser_session.session_manager.cdp_client_for_node(element_node)
 
 			# Convert node to object ID for CDP operations
 			try:
@@ -3287,11 +3289,11 @@ class DefaultActionWatchdog(BaseWatchdog):
 		try:
 			# Use the provided node
 			element_node = event.node
-			index_for_logging = self.browser_session.get_selector_index(element_node)
+			index_for_logging = self.browser_session.dom_state.get_selector_index(element_node)
 			target_text = event.text
 
 			# Get CDP session for this node
-			cdp_session = await self.browser_session.cdp_client_for_node(element_node)
+			cdp_session = await self.browser_session.session_manager.cdp_client_for_node(element_node)
 
 			# Convert node to object ID for CDP operations
 			try:

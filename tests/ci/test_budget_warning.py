@@ -18,7 +18,7 @@ async def test_budget_warning_injected_at_75_percent():
 	agent = Agent(task='Test task', llm=llm)
 
 	step_info = AgentStepInfo(step_number=74, max_steps=100)  # step 75/100 = 75%
-	await agent._inject_budget_warning(step_info)
+	await agent._execution._inject_budget_warning(step_info)
 
 	messages = _get_context_messages(agent)
 	assert len(messages) == 1
@@ -33,7 +33,7 @@ async def test_budget_warning_injected_at_90_percent():
 	agent = Agent(task='Test task', llm=llm)
 
 	step_info = AgentStepInfo(step_number=89, max_steps=100)  # step 90/100 = 90%
-	await agent._inject_budget_warning(step_info)
+	await agent._execution._inject_budget_warning(step_info)
 
 	messages = _get_context_messages(agent)
 	assert len(messages) == 1
@@ -48,7 +48,7 @@ async def test_no_budget_warning_below_75_percent():
 	agent = Agent(task='Test task', llm=llm)
 
 	step_info = AgentStepInfo(step_number=73, max_steps=100)  # step 74/100 = 74%
-	await agent._inject_budget_warning(step_info)
+	await agent._execution._inject_budget_warning(step_info)
 
 	messages = _get_context_messages(agent)
 	assert len(messages) == 0
@@ -61,7 +61,7 @@ async def test_no_budget_warning_on_last_step():
 
 	step_info = AgentStepInfo(step_number=99, max_steps=100)  # last step
 	assert step_info.is_last_step()
-	await agent._inject_budget_warning(step_info)
+	await agent._execution._inject_budget_warning(step_info)
 
 	messages = _get_context_messages(agent)
 	assert len(messages) == 0
@@ -72,7 +72,7 @@ async def test_no_budget_warning_when_step_info_is_none():
 	llm = create_mock_llm()
 	agent = Agent(task='Test task', llm=llm)
 
-	await agent._inject_budget_warning(None)
+	await agent._execution._inject_budget_warning(None)
 
 	messages = _get_context_messages(agent)
 	assert len(messages) == 0
@@ -85,7 +85,7 @@ async def test_budget_warning_exact_threshold():
 
 	# step_number=14 means step 15 (1-indexed), 15/20 = 75%
 	step_info = AgentStepInfo(step_number=14, max_steps=20)
-	await agent._inject_budget_warning(step_info)
+	await agent._execution._inject_budget_warning(step_info)
 
 	messages = _get_context_messages(agent)
 	assert len(messages) == 1
@@ -100,7 +100,7 @@ async def test_budget_warning_just_below_threshold():
 
 	# step_number=13 means step 14 (1-indexed), 14/20 = 70%
 	step_info = AgentStepInfo(step_number=13, max_steps=20)
-	await agent._inject_budget_warning(step_info)
+	await agent._execution._inject_budget_warning(step_info)
 
 	messages = _get_context_messages(agent)
 	assert len(messages) == 0
@@ -114,13 +114,13 @@ async def test_budget_warning_small_max_steps():
 	# step_number=3 means step 4 (1-indexed), 4/4 = 100% but is_last_step
 	step_info = AgentStepInfo(step_number=3, max_steps=4)
 	assert step_info.is_last_step()
-	await agent._inject_budget_warning(step_info)
+	await agent._execution._inject_budget_warning(step_info)
 	messages = _get_context_messages(agent)
 	assert len(messages) == 0  # last step, no warning
 
 	# step_number=2 means step 3 (1-indexed), 3/4 = 75%
 	step_info = AgentStepInfo(step_number=2, max_steps=4)
-	await agent._inject_budget_warning(step_info)
+	await agent._execution._inject_budget_warning(step_info)
 	messages = _get_context_messages(agent)
 	assert len(messages) == 1
 	assert '3/4' in messages[0]
@@ -133,7 +133,7 @@ async def test_budget_warning_percentage_display():
 
 	# step 76/100 = 76%
 	step_info = AgentStepInfo(step_number=75, max_steps=100)
-	await agent._inject_budget_warning(step_info)
+	await agent._execution._inject_budget_warning(step_info)
 
 	messages = _get_context_messages(agent)
 	assert '76%' in messages[0]
@@ -147,7 +147,7 @@ async def test_budget_warning_contains_actionable_guidance():
 	agent = Agent(task='Test task', llm=llm)
 
 	step_info = AgentStepInfo(step_number=74, max_steps=100)
-	await agent._inject_budget_warning(step_info)
+	await agent._execution._inject_budget_warning(step_info)
 
 	messages = _get_context_messages(agent)
 	msg = messages[0]

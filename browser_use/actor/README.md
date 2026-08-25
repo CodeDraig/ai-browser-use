@@ -146,9 +146,9 @@ products = await page.extract_content(
 
 ### BrowserSession Methods (Tab Management)
 - `start()` - Initialize and start the browser session
-- `stop()` - Stop the browser session (keeps browser alive)
-- `kill()` - Kill the browser process and reset all state
-- `new_page(url=None)` → `Page` - Create blank tab or navigate to URL
+- `stop()` - Disconnect the session while keeping a live BrowserSession-owned local browser alive
+- `kill()` - Kill the browser process and reset all state. If an owned local process cannot be terminated, this raises and retains ownership so `kill()` can be retried.
+- `new_page(url=None)` → `Page` - Create a blank tab or navigate to a URL. With a URL policy, a blocked supplied URL emits `BrowserErrorEvent`, closes the tab, and returns the closed `Page` handle. If Chromium cannot confirm closure after a bounded retry, this raises with the target ID so callers can recover through `get_pages()`/`close_page()` or `kill()`.
 - `get_pages()` → `list[Page]` - Get all available pages
 - `get_current_page()` → `Page | None` - Get the currently focused page
 - `close_page(page: Page | str)` - Close page by object or ID

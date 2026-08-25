@@ -7,6 +7,7 @@ and `record_har_mode` (full/minimal).
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import json
@@ -150,6 +151,7 @@ class HarRecordingWatchdog(BaseWatchdog):
 	def __init__(self, *args, **kwargs) -> None:
 		super().__init__(*args, **kwargs)
 		self._enabled: bool = False
+		self._finalize_lock = asyncio.Lock()
 		self._entries: dict[str, _HarEntryBuilder] = {}
 		self._top_level_pages: dict[
 			str, dict
@@ -198,13 +200,22 @@ class HarRecordingWatchdog(BaseWatchdog):
 			self._enabled = False
 
 	async def on_BrowserStopEvent(self, event: BrowserStopEvent) -> None:
+		await self.finalize()
+
+	async def finalize(self) -> None:
+		"""Write the current HAR at most once before CDP disconnection."""
 		if not self._enabled:
 			return
-		try:
-			await self._write_har()
-			self.logger.info(f'📊 HAR file saved: {self._har_path}')
-		except Exception as e:
-			self.logger.warning(f'Failed to write HAR: {e}')
+		async with self._finalize_lock:
+			if not self._enabled:
+				return
+			try:
+				await self._write_har()
+				self.logger.info(f'📊 HAR file saved: {self._har_path}')
+			except Exception as e:
+				self.logger.warning(f'Failed to write HAR: {e}')
+			finally:
+				self._enabled = False
 
 	# =============== CDP Event Handlers (sync) ==================
 	def _on_request_will_be_sent(self, params: RequestWillBeSentEvent, session_id: str | None) -> None:

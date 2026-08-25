@@ -181,7 +181,7 @@ async def run_single_agent(task: str, llm, agent_id: int) -> tuple[int, str]:
 		# Debug: Check initial tab count
 		try:
 			await browser_session.start()
-			initial_tabs = await browser_session._cdp_get_all_pages()
+			initial_tabs = await browser_session.session_manager.get_all_pages()
 			print(f'   📊 Agent {agent_id} initial tab count: {len(initial_tabs)}')
 		except Exception as e:
 			print(f'   ⚠️ Could not check initial tabs for agent {agent_id}: {e}')
@@ -198,7 +198,7 @@ async def run_single_agent(task: str, llm, agent_id: int) -> tuple[int, str]:
 
 		# Debug: Check final tab count
 		try:
-			final_tabs = await browser_session._cdp_get_all_pages()
+			final_tabs = await browser_session.session_manager.get_all_pages()
 			print(f'   📊 Agent {agent_id} final tab count: {len(final_tabs)}')
 			for i, tab in enumerate(final_tabs):
 				print(f'      Tab {i + 1}: {tab.get("url", "unknown")[:50]}...')

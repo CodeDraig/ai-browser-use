@@ -28,7 +28,7 @@ def register_viewport_actions(tools: 'Tools') -> None:
 			# Special case: index 0 means scroll the whole page (root/body element)
 			node = None
 			if params.index is not None and params.index != 0:
-				node = await browser_session.get_dom_element_by_index(params.index)
+				node = await browser_session.dom_state.get_dom_element_by_index(params.index)
 				if node is None:
 					# Element does not exist
 					msg = f'Element index {params.index} not found in browser state'

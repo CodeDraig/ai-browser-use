@@ -55,7 +55,7 @@ class ScreenshotWatchdog(BaseWatchdog):
 			# finally block can suppress external task cancellation.
 			# remove_highlights() has its own asyncio.timeout(3.0) internally so it won't block.
 			try:
-				await self.browser_session.remove_highlights()
+				await self.browser_session.dom_state.remove_highlights()
 			except Exception:
 				pass
 

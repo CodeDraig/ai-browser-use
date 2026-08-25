@@ -45,6 +45,10 @@ class _StubBrowserSession:
 	# Capture the params.path passed in by the action so the test can inspect it.
 	captured_resolved_path: str | None = None
 
+	@property
+	def dom_state(self) -> _StubBrowserSession:
+		return self
+
 	async def get_current_page_url(self) -> str:
 		return 'about:blank'
 

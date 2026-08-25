@@ -286,7 +286,7 @@ class TestGetDropdownOptionsEvent:
 		await browser_session.get_browser_state_summary()
 
 		# Find the select element by ID
-		dropdown_index = await browser_session.get_index_by_id('test-dropdown')
+		dropdown_index = await browser_session.dom_state.get_index_by_id('test-dropdown')
 
 		assert dropdown_index is not None, 'Could not find select element'
 
@@ -306,7 +306,7 @@ class TestGetDropdownOptionsEvent:
 		assert 'Use the exact text string' in result.extracted_content and 'select_dropdown' in result.extracted_content
 
 		# Also test direct event dispatch
-		node = await browser_session.get_dom_element_by_index(dropdown_index)
+		node = await browser_session.dom_state.get_dom_element_by_index(dropdown_index)
 		assert node is not None
 		event = browser_session.event_bus.dispatch(GetDropdownOptionsEvent(node=node))
 		dropdown_data = await event.event_result(timeout=3.0)
@@ -328,7 +328,7 @@ class TestGetDropdownOptionsEvent:
 		await browser_session.get_browser_state_summary()
 
 		# Find the ARIA menu by ID
-		menu_index = await browser_session.get_index_by_id('pyNavigation1752753375773')
+		menu_index = await browser_session.dom_state.get_index_by_id('pyNavigation1752753375773')
 
 		assert menu_index is not None, 'Could not find ARIA menu element'
 
@@ -345,7 +345,7 @@ class TestGetDropdownOptionsEvent:
 			assert option in result.extracted_content, f"Option '{option}' not found in result content"
 
 		# Also test direct event dispatch
-		node = await browser_session.get_dom_element_by_index(menu_index)
+		node = await browser_session.dom_state.get_dom_element_by_index(menu_index)
 		assert node is not None
 		event = browser_session.event_bus.dispatch(GetDropdownOptionsEvent(node=node))
 		dropdown_data = await event.event_result(timeout=3.0)
@@ -367,7 +367,7 @@ class TestGetDropdownOptionsEvent:
 		await browser_session.get_browser_state_summary()
 
 		# Find the custom dropdown by ID
-		dropdown_index = await browser_session.get_index_by_id('custom-dropdown')
+		dropdown_index = await browser_session.dom_state.get_index_by_id('custom-dropdown')
 
 		assert dropdown_index is not None, 'Could not find custom dropdown element'
 
@@ -384,7 +384,7 @@ class TestGetDropdownOptionsEvent:
 			assert option in result.extracted_content, f"Option '{option}' not found in result content"
 
 		# Also test direct event dispatch
-		node = await browser_session.get_dom_element_by_index(dropdown_index)
+		node = await browser_session.dom_state.get_dom_element_by_index(dropdown_index)
 		assert node is not None
 		event = browser_session.event_bus.dispatch(GetDropdownOptionsEvent(node=node))
 		dropdown_data = await event.event_result(timeout=3.0)
@@ -411,7 +411,7 @@ class TestSelectDropdownOptionEvent:
 		await browser_session.get_browser_state_summary()
 
 		# Find the select element by ID
-		dropdown_index = await browser_session.get_index_by_id('test-dropdown')
+		dropdown_index = await browser_session.dom_state.get_index_by_id('test-dropdown')
 
 		assert dropdown_index is not None
 
@@ -447,7 +447,7 @@ class TestSelectDropdownOptionEvent:
 		await browser_session.get_browser_state_summary()
 
 		# Find the ARIA menu by ID
-		menu_index = await browser_session.get_index_by_id('pyNavigation1752753375773')
+		menu_index = await browser_session.dom_state.get_index_by_id('pyNavigation1752753375773')
 
 		assert menu_index is not None
 
@@ -483,7 +483,7 @@ class TestSelectDropdownOptionEvent:
 		await browser_session.get_browser_state_summary()
 
 		# Find the custom dropdown by ID
-		dropdown_index = await browser_session.get_index_by_id('custom-dropdown')
+		dropdown_index = await browser_session.dom_state.get_index_by_id('custom-dropdown')
 
 		assert dropdown_index is not None
 
@@ -519,12 +519,12 @@ class TestSelectDropdownOptionEvent:
 		await browser_session.get_browser_state_summary()
 
 		# Find the select element by ID
-		dropdown_index = await browser_session.get_index_by_id('test-dropdown')
+		dropdown_index = await browser_session.dom_state.get_index_by_id('test-dropdown')
 
 		assert dropdown_index is not None
 
 		# Try to select non-existent option via direct event
-		node = await browser_session.get_dom_element_by_index(dropdown_index)
+		node = await browser_session.dom_state.get_dom_element_by_index(dropdown_index)
 		assert node is not None
 		event = browser_session.event_bus.dispatch(SelectDropdownOptionEvent(node=node, text='Non-existent Option'))
 

@@ -11,7 +11,7 @@ from browser_use.browser.events import (
 	TabCreatedEvent,
 )
 from browser_use.browser.watchdog_base import BaseWatchdog
-from browser_use.security import match_url_with_domain_pattern
+from browser_use.security import is_ip_address, is_url_allowed_by_policy
 
 if TYPE_CHECKING:
 	pass
@@ -90,42 +90,8 @@ class SecurityWatchdog(BaseWatchdog):
 				self.logger.error(f'⛔️ Failed to close new tab with non-allowed URL: {type(e).__name__} {e}')
 
 	def _is_ip_address(self, host: str) -> bool:
-		"""True iff `host` matches an IPv4 or IPv6 the browser would resolve.
-
-		Mirrors WHATWG host canonicalization so non-standard IPv4 encodings
-		(decimal, hex, octal, short-form, percent-encoded, Unicode digits)
-		can't bypass `block_ip_addresses`. Never raises — unrecognizable
-		hosts return False and fall through to domain-allowlist handling.
-		"""
-		import ipaddress
-		import socket
-		import unicodedata
-		from urllib.parse import unquote
-
-		bare = host.strip('[]')
-		try:
-			bare = unquote(bare)
-		except Exception:
-			pass
-		try:
-			bare = unicodedata.normalize('NFKC', bare)
-		except Exception:
-			pass
-		# IDNA label separators NFKC misses (U+3002, U+FF61 → U+3002).
-		bare = bare.replace('。', '.').replace('｡', '.')
-
-		try:
-			ipaddress.ip_address(bare)
-			return True
-		except Exception:
-			pass
-		# Non-standard IPv4 (decimal, hex, octal, short-form) — `inet_aton`
-		# accepts the same liberal forms the kernel resolver does.
-		try:
-			socket.inet_aton(bare)
-			return True
-		except Exception:
-			return False
+		"""Compatibility wrapper for direct security-watchdog tests."""
+		return is_ip_address(host)
 
 	def _is_url_allowed(self, url: str) -> bool:
 		"""Check if a URL is allowed based on the allowed_domains configuration.
@@ -137,49 +103,11 @@ class SecurityWatchdog(BaseWatchdog):
 			True if the URL is allowed, False otherwise
 		"""
 
-		# Always allow internal browser targets (before any other checks)
-		if url in ['about:blank', 'chrome://new-tab-page/', 'chrome://new-tab-page', 'chrome://newtab/']:
-			return True
-
-		# Parse the URL to extract components
-		from urllib.parse import urlparse
-
-		try:
-			parsed = urlparse(url)
-		except Exception:
-			# Invalid URL
-			return False
-
-		# Allow data: and blob: URLs (they don't have hostnames)
-		if parsed.scheme in ['data', 'blob']:
-			return True
-
-		# Get the actual host (domain)
-		host = parsed.hostname
-		if not host:
-			return False
-
-		# Check if IP addresses should be blocked (before domain checks)
-		if self.browser_session.browser_profile.block_ip_addresses:
-			if self._is_ip_address(host):
-				return False
-
-		# If no allowed_domains specified, allow all URLs
-		if (
-			not self.browser_session.browser_profile.allowed_domains
-			and not self.browser_session.browser_profile.prohibited_domains
-		):
-			return True
-
-		# Use one parsed-component matcher for every collection shape. The former
-		# set fast path compared hostnames only and therefore bypassed scheme policy.
-		if self.browser_session.browser_profile.allowed_domains:
-			allowed_domains = self.browser_session.browser_profile.allowed_domains
-			return any(match_url_with_domain_pattern(url, pattern, log_warnings=True) for pattern in allowed_domains)
-
-		# Check prohibited domains through the same matcher.
-		if self.browser_session.browser_profile.prohibited_domains:
-			prohibited_domains = self.browser_session.browser_profile.prohibited_domains
-			return not any(match_url_with_domain_pattern(url, pattern, log_warnings=True) for pattern in prohibited_domains)
-
-		return True
+		profile = self.browser_session.browser_profile
+		return is_url_allowed_by_policy(
+			url,
+			allowed_domains=profile.allowed_domains,
+			prohibited_domains=profile.prohibited_domains,
+			block_ip_addresses=profile.block_ip_addresses,
+			log_warnings=True,
+		)

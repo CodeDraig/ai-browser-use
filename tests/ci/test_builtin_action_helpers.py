@@ -17,7 +17,7 @@ from browser_use.tools.actions.page_queries import (
 def test_coordinate_conversion_scales_to_original_viewport():
 	browser_session = cast(
 		BrowserSession,
-		SimpleNamespace(llm_screenshot_size=(1000, 500), _original_viewport_size=(2000, 1000)),
+		SimpleNamespace(llm_screenshot_size=(1000, 500), dom_state=SimpleNamespace(original_viewport_size=(2000, 1000))),
 	)
 	assert _convert_llm_coordinates_to_viewport(250, 125, browser_session) == (500, 250)
 
@@ -25,7 +25,7 @@ def test_coordinate_conversion_scales_to_original_viewport():
 def test_coordinate_conversion_preserves_coordinates_without_resize():
 	browser_session = cast(
 		BrowserSession,
-		SimpleNamespace(llm_screenshot_size=None, _original_viewport_size=None),
+		SimpleNamespace(llm_screenshot_size=None, dom_state=SimpleNamespace(original_viewport_size=None)),
 	)
 	assert _convert_llm_coordinates_to_viewport(250, 125, browser_session) == (250, 125)
 

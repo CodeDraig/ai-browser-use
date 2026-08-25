@@ -7,14 +7,39 @@ no-ops step()/wait_until_idle() in that state while still restarting on the next
 
 import asyncio
 
+import pytest
 from bubus import BaseEvent, EventBus
 
 from browser_use.browser import BrowserProfile, BrowserSession
-from browser_use.browser.session import ResilientEventBus
+from browser_use.browser.event_bus import ResilientEventBus
+from browser_use.browser.events import (
+	AgentFocusChangedEvent,
+	BrowserStartEvent,
+	BrowserStopEvent,
+	CloseTabEvent,
+	FileDownloadedEvent,
+	NavigateToUrlEvent,
+	SwitchTabEvent,
+	TabClosedEvent,
+	TabCreatedEvent,
+)
 
 
 class ResiliencePingEvent(BaseEvent):
 	pass
+
+
+CORE_EVENT_TYPES = (
+	BrowserStartEvent,
+	BrowserStopEvent,
+	NavigateToUrlEvent,
+	SwitchTabEvent,
+	TabCreatedEvent,
+	TabClosedEvent,
+	AgentFocusChangedEvent,
+	FileDownloadedEvent,
+	CloseTabEvent,
+)
 
 
 def _tear_down_like_agent_close(bus: EventBus) -> None:
@@ -27,6 +52,20 @@ def test_browser_session_uses_resilient_event_bus():
 	"""The session's default event bus must be the resilient subclass."""
 	session = BrowserSession(browser_profile=BrowserProfile(keep_alive=True))
 	assert isinstance(session.event_bus, ResilientEventBus)
+
+
+@pytest.mark.parametrize('lifecycle_method', ['stop', 'kill'])
+async def test_lifecycle_reset_renews_bus_with_one_core_handler_set(lifecycle_method: str):
+	"""A stopped session must remain startable through its fresh event bus."""
+	session = BrowserSession(browser_profile=BrowserProfile(user_data_dir=None, keep_alive=False, captcha_solver=False))
+	original_bus = session.event_bus
+
+	await getattr(session, lifecycle_method)()
+
+	assert session.event_bus is not original_bus
+	assert session.watchdogs._attached is False
+	for event_type in CORE_EVENT_TYPES:
+		assert len(session.event_bus.handlers.get(event_type.__name__, [])) == 1
 
 
 def test_resilient_event_bus_keeps_event_bus_name_prefix():

@@ -39,7 +39,7 @@ async def upload_file(index: int, path: str, browser_session: BrowserSession, av
 
 	try:
 		# Get the DOM element by index
-		dom_element = await browser_session.get_dom_element_by_index(index)
+		dom_element = await browser_session.dom_state.get_dom_element_by_index(index)
 
 		if dom_element is None:
 			msg = f'No element found at index {index}'

@@ -15,7 +15,7 @@ logger = logging.getLogger('browser_use.tools.service')
 async def get_dropdown_options(params: GetDropdownOptionsAction, browser_session: BrowserSession) -> ActionResult:
 	"""Get all options from a native dropdown or ARIA menu"""
 	# Look up the node from the selector map
-	node = await browser_session.get_dom_element_by_index(params.index)
+	node = await browser_session.dom_state.get_dom_element_by_index(params.index)
 	if node is None:
 		msg = f'Element index {params.index} not available - page may have changed. Try refreshing browser state.'
 		logger.warning(f'⚠️ {msg}')
@@ -55,7 +55,7 @@ def register_dropdown_actions(tools: 'Tools') -> None:
 	async def select_dropdown(params: SelectDropdownOptionAction, browser_session: BrowserSession):
 		"""Select dropdown option by the text of the option you want to select"""
 		# Look up the node from the selector map
-		node = await browser_session.get_dom_element_by_index(params.index)
+		node = await browser_session.dom_state.get_dom_element_by_index(params.index)
 		if node is None:
 			msg = f'Element index {params.index} not available - page may have changed. Try refreshing browser state.'
 			logger.warning(f'⚠️ {msg}')

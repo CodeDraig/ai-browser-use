@@ -57,7 +57,7 @@ async def run_task(task: str, index: int):
         result = await agent.run()
         return result
     finally:
-        await browser.close()
+		await browser.stop()
 
 async def main():
     tasks = [
@@ -91,7 +91,7 @@ await agent.run()
 agent.add_new_task("Click on the first repository and extract the star count")
 await agent.run()
 
-await browser.close()
+await browser.stop()
 ```
 
 `keep_alive=True` keeps browser open between tasks. Agent maintains memory and browser state.

@@ -18,6 +18,43 @@ from browser_use.logging_utils import log_pretty_path
 
 logger = logging.getLogger(__name__)
 
+# The cloud service applies its default proxy only when this argument is omitted.
+CLOUD_PROXY_UNSET: Any = object()
+
+
+def resolve_browser_profile(
+	*,
+	browser_profile: 'BrowserProfile | None',
+	cdp_url: str | None,
+	cloud_profile_id: Any,
+	cloud_proxy_country_code: Any,
+	cloud_timeout: int | None,
+	profile_kwargs: dict[str, Any],
+) -> 'BrowserProfile':
+	"""Resolve direct BrowserSession arguments into one current BrowserProfile."""
+	if cloud_profile_id is not None or cloud_proxy_country_code is not CLOUD_PROXY_UNSET or cloud_timeout is not None:
+		cloud_kwargs: dict[str, Any] = {}
+		if cloud_profile_id is not None:
+			cloud_kwargs['cloud_profile_id'] = cloud_profile_id
+		if cloud_proxy_country_code is not CLOUD_PROXY_UNSET:
+			cloud_kwargs['cloud_proxy_country_code'] = cloud_proxy_country_code
+		if cloud_timeout is not None:
+			cloud_kwargs['cloud_timeout'] = cloud_timeout
+		profile_kwargs['cloud_browser_params'] = CreateBrowserRequest(**cloud_kwargs)
+		profile_kwargs['use_cloud'] = True
+
+	if profile_kwargs.get('cloud_browser_params') is not None:
+		profile_kwargs['use_cloud'] = True
+	if profile_kwargs.get('is_local') is False and profile_kwargs.get('executable_path') is not None:
+		profile_kwargs['is_local'] = True
+	if not cdp_url and not profile_kwargs.get('use_cloud'):
+		profile_kwargs['is_local'] = True
+
+	if browser_profile is None:
+		return BrowserProfile(**profile_kwargs)
+	merged_kwargs = {**browser_profile.model_dump(exclude_unset=True), **profile_kwargs}
+	return BrowserProfile(**merged_kwargs)
+
 
 def _get_enable_default_extensions_default() -> bool:
 	"""Get the default value for enable_default_extensions from env var or True."""

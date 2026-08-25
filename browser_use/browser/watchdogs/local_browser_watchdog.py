@@ -44,6 +44,55 @@ class LocalBrowserWatchdog(BaseWatchdog):
 	_temp_dirs_to_cleanup: list[Path] = PrivateAttr(default_factory=list)
 	_original_user_data_dir: str | None = PrivateAttr(default=None)
 
+	@property
+	def owns_browser_process(self) -> bool:
+		"""Whether this watchdog owns a process that is still live."""
+		return self._subprocess is not None and self._process_is_alive(self._subprocess)
+
+	@staticmethod
+	def _process_is_alive(process: psutil.Process) -> bool:
+		"""Return process liveness without discarding ownership on uncertain status."""
+		try:
+			if not process.is_running():
+				return False
+		except psutil.NoSuchProcess:
+			return False
+		except Exception:
+			# An access/status failure is not evidence that the owned process exited.
+			return True
+
+		try:
+			return process.status() not in (psutil.STATUS_DEAD, psutil.STATUS_ZOMBIE)
+		except psutil.NoSuchProcess:
+			return False
+		except Exception:
+			return True
+
+	@staticmethod
+	def _confirm_process_exited(process: psutil.Process) -> bool:
+		"""Confirm exit and reap an owned child that is already a zombie."""
+		if LocalBrowserWatchdog._process_is_alive(process):
+			return False
+		try:
+			# The process is already non-live, so timeout=0 cannot block. For an
+			# owned child this also removes a zombie PID from the process table.
+			process.wait(timeout=0)
+		except (psutil.NoSuchProcess, psutil.TimeoutExpired):
+			pass
+		except Exception:
+			# Waiting is only for reaping. A second liveness query remains the
+			# authority when the platform does not permit wait() here.
+			pass
+		try:
+			# is_running() stays true for an unreaped zombie, but becomes false
+			# after wait() or the asyncio child watcher removes the original PID.
+			# It also detects PID reuse using psutil's cached process identity.
+			return not process.is_running()
+		except psutil.NoSuchProcess:
+			return True
+		except Exception:
+			return False
+
 	async def on_BrowserLaunchEvent(self, event: BrowserLaunchEvent) -> BrowserLaunchResult:
 		"""Launch a local browser process."""
 
@@ -63,7 +112,11 @@ class LocalBrowserWatchdog(BaseWatchdog):
 	async def on_BrowserKillEvent(self, event: BrowserKillEvent) -> None:
 		"""Kill the local browser subprocess."""
 		self.logger.debug('[LocalBrowserWatchdog] Killing local browser process')
+		await self._cleanup_owned_browser_resources()
+		self.logger.debug('[LocalBrowserWatchdog] Browser cleanup completed')
 
+	async def _cleanup_owned_browser_resources(self) -> None:
+		"""Release owned process/profile state only after verified process exit."""
 		if self._subprocess:
 			await self._cleanup_process(self._subprocess)
 			self._subprocess = None
@@ -78,14 +131,19 @@ class LocalBrowserWatchdog(BaseWatchdog):
 			self.browser_session.browser_profile.user_data_dir = self._original_user_data_dir
 			self._original_user_data_dir = None
 
-		self.logger.debug('[LocalBrowserWatchdog] Browser cleanup completed')
-
 	async def on_BrowserStopEvent(self, event: BrowserStopEvent) -> None:
-		"""Listen for BrowserStopEvent and dispatch BrowserKillEvent without awaiting it."""
-		if self.browser_session.is_local and self._subprocess:
-			self.logger.debug('[LocalBrowserWatchdog] BrowserStopEvent received, dispatching BrowserKillEvent')
-			# Dispatch BrowserKillEvent without awaiting so it gets processed after all BrowserStopEvent handlers
-			self.event_bus.dispatch(BrowserKillEvent())
+		"""Preserve a live process on stop; clean forced or already-dead ownership."""
+		if not self.browser_session.is_local or not self._subprocess:
+			return
+		if not event.force and self.owns_browser_process:
+			return
+		self.logger.debug(
+			'[LocalBrowserWatchdog] BrowserStopEvent requires owned-resource cleanup '
+			f'(force={event.force}, process_alive={self.owns_browser_process})'
+		)
+		kill_event = self.event_bus.dispatch(BrowserKillEvent())
+		await kill_event
+		await kill_event.event_result(raise_if_any=True, raise_if_none=False)
 
 	async def _launch_browser(self, max_retries: int = 3) -> tuple[psutil.Process, str]:
 		"""Launch browser process and return (process, cdp_url).
@@ -426,7 +484,7 @@ class LocalBrowserWatchdog(BaseWatchdog):
 
 	@staticmethod
 	async def _cleanup_process(process: psutil.Process) -> None:
-		"""Clean up browser process.
+		"""Terminate a browser process and verify that it exited.
 
 		Args:
 			process: psutil.Process to terminate
@@ -434,28 +492,49 @@ class LocalBrowserWatchdog(BaseWatchdog):
 		if not process:
 			return
 
-		try:
-			# Try graceful shutdown first
-			process.terminate()
-
-			# Use async wait instead of blocking wait
-			for _ in range(50):  # Wait up to 5 seconds (50 * 0.1)
-				if not process.is_running():
+		if not LocalBrowserWatchdog._process_is_alive(process):
+			for _ in range(50):
+				if LocalBrowserWatchdog._confirm_process_exited(process):
 					return
 				await asyncio.sleep(0.1)
+			# A platform may not allow reaping here, but the process is verified
+			# non-live and must not be signalled as though it were still running.
+			if not LocalBrowserWatchdog._process_is_alive(process):
+				return
 
-			# If still running after 5 seconds, force kill
-			if process.is_running():
-				process.kill()
-				# Give it a moment to die
-				await asyncio.sleep(0.1)
-
+		try:
+			process.terminate()
 		except psutil.NoSuchProcess:
-			# Process already gone
-			pass
-		except Exception:
-			# Ignore any other errors during cleanup
-			pass
+			return
+		except Exception as error:
+			raise RuntimeError(f'Failed to terminate owned browser process {process.pid}: {error}') from error
+
+		for _ in range(50):
+			if LocalBrowserWatchdog._confirm_process_exited(process):
+				return
+			await asyncio.sleep(0.1)
+		if LocalBrowserWatchdog._confirm_process_exited(process):
+			return
+		if not LocalBrowserWatchdog._process_is_alive(process):
+			return
+
+		try:
+			process.kill()
+		except psutil.NoSuchProcess:
+			return
+		except Exception as error:
+			raise RuntimeError(f'Failed to kill owned browser process {process.pid}: {error}') from error
+
+		for _ in range(50):
+			if LocalBrowserWatchdog._confirm_process_exited(process):
+				return
+			await asyncio.sleep(0.1)
+		if LocalBrowserWatchdog._confirm_process_exited(process):
+			return
+		if not LocalBrowserWatchdog._process_is_alive(process):
+			return
+
+		raise RuntimeError(f'Owned browser process {process.pid} remained alive after terminate() and kill()')
 
 	def _cleanup_temp_dir(self, temp_dir: Path | str) -> None:
 		"""Clean up temporary directory.

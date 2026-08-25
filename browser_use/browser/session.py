@@ -1,19 +1,21 @@
 """Event-driven browser session."""
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import re
 import time
 from functools import cached_property
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, Self, Union, cast, overload
+from typing import TYPE_CHECKING, Any, Literal, Self, cast, overload
 from urllib.parse import urlparse, urlunparse
 from uuid import UUID
 
 import httpx
-from bubus import BaseEvent, EventBus
+from bubus import EventBus
 from cdp_use import CDPClient
-from cdp_use.cdp.fetch import AuthRequiredEvent, RequestPausedEvent
+from cdp_use.cdp.fetch import AuthRequiredEvent
 from cdp_use.cdp.network import Cookie
 from cdp_use.cdp.target import SessionID, TargetID
 from cdp_use.cdp.target.commands import CreateTargetParameters
@@ -26,11 +28,7 @@ from browser_use.browser.cloud.cloud import CloudBrowserAuthError, CloudBrowserC
 # CDP logging is now handled by setup_logging() in logging_config.py
 # It automatically sets CDP logs to the same level as browser_use logs
 from browser_use.browser.cloud.views import CreateBrowserRequest, ProxyCountryCode
-
-# Sentinel to distinguish "not passed" from "explicitly None" for proxy params.
-# When a user passes proxy_country_code=None, they mean "disable the proxy".
-# When they don't pass it at all, the server applies its default (US proxy).
-_UNSET: Any = object()
+from browser_use.browser.event_bus import ResilientEventBus as _ResilientEventBus
 from browser_use.browser.events import (
 	AgentFocusChangedEvent,
 	BrowserConnectedEvent,
@@ -52,9 +50,16 @@ from browser_use.browser.events import (
 	TabClosedEvent,
 	TabCreatedEvent,
 )
-from browser_use.browser.profile import BrowserProfile, ProxySettings
+from browser_use.browser.profile import (
+	CLOUD_PROXY_UNSET,
+	BrowserProfile,
+	ProxySettings,
+	resolve_browser_profile,
+)
 from browser_use.browser.views import BrowserStateSummary, TabInfo
-from browser_use.dom.views import DOMRect, EnhancedDOMTreeNode, SerializedDOMState, TargetInfo
+from browser_use.browser.watchdogs.registry import WatchdogRegistry
+from browser_use.dom.browser_state import BrowserDomState
+from browser_use.dom.views import SerializedDOMState
 from browser_use.logging_utils import log_pretty_url
 from browser_use.runtime import create_task_with_error_handling
 from browser_use.security import is_new_tab_page
@@ -62,6 +67,7 @@ from browser_use.security import is_new_tab_page
 if TYPE_CHECKING:
 	from browser_use.actor.page import Page
 	from browser_use.browser.demo_mode import DemoMode
+	from browser_use.browser.session_manager import CDPSession, Target
 	from browser_use.browser.watchdogs.captcha_watchdog import CaptchaWaitResult
 
 DEFAULT_BROWSER_PROFILE = BrowserProfile()
@@ -69,67 +75,6 @@ DEFAULT_BROWSER_PROFILE = BrowserProfile()
 _LOGGED_UNIQUE_SESSION_IDS = set()  # track unique session IDs that have been logged to make sure we always assign a unique enough id to new sessions and avoid ambiguity in logs
 red = '\033[91m'
 reset = '\033[0m'
-
-
-class Target(BaseModel):
-	"""Browser target (page, iframe, worker) - the actual entity being controlled.
-
-	A target represents a browsing context with its own URL, title, and type.
-	Multiple CDP sessions can attach to the same target for communication.
-	"""
-
-	model_config = ConfigDict(arbitrary_types_allowed=True, revalidate_instances='never')
-
-	target_id: TargetID
-	target_type: str  # 'page', 'iframe', 'worker', etc.
-	url: str = 'about:blank'
-	title: str = 'Unknown title'
-
-
-class CDPSession(BaseModel):
-	"""CDP communication channel to a target.
-
-	A session is a connection that allows sending CDP commands to a specific target.
-	Multiple sessions can attach to the same target.
-	"""
-
-	model_config = ConfigDict(arbitrary_types_allowed=True, revalidate_instances='never')
-
-	cdp_client: CDPClient
-	target_id: TargetID
-	session_id: SessionID
-
-	# Lifecycle monitoring: reference to SessionManager's per-target event buffer
-	# (assigned in _enable_page_monitoring; used by readiness checks)
-	_lifecycle_events: Any = PrivateAttr(default=None)
-
-
-class ResilientEventBus(EventBus):
-	"""EventBus whose step()/wait_until_idle() no-op on a torn-down bus instead of asserting.
-
-	Agent.close() stops a keep_alive session's bus and nulls its async primitives to release
-	the event loop. On warm-Lambda resume the worker can step() it before a dispatch() restarts
-	it; stock bubus then asserts "_start() must be called before step()" (ENG-5280).
-	"""
-
-	def __init__(self, name: str | None = None, **kwargs: Any) -> None:
-		# Keep the EventBus_ name prefix (bubus would otherwise derive it from the class name).
-		super().__init__(name=name or f'EventBus_{uuid7str()[-8:]}', **kwargs)
-
-	async def step(
-		self,
-		event: 'BaseEvent[Any] | None' = None,
-		timeout: float | None = None,
-		wait_for_timeout: float = 0.1,
-	) -> 'BaseEvent[Any] | None':
-		if self._on_idle is None or self.event_queue is None:
-			return None
-		return await super().step(event, timeout, wait_for_timeout)
-
-	async def wait_until_idle(self, timeout: float | None = None) -> None:
-		if self._on_idle is None or self.event_queue is None:
-			return None
-		return await super().wait_until_idle(timeout)
 
 
 class BrowserSession(BaseModel):
@@ -264,7 +209,7 @@ class BrowserSession(BaseModel):
 		browser_profile: BrowserProfile | None = None,
 		# Cloud browser params (don't mix with local browser params)
 		cloud_profile_id: UUID | str | None = None,
-		cloud_proxy_country_code: ProxyCountryCode | None = _UNSET,  # type: ignore[assignment]
+		cloud_proxy_country_code: ProxyCountryCode | None = CLOUD_PROXY_UNSET,  # type: ignore[assignment]
 		cloud_timeout: int | None = None,
 		# BrowserProfile fields that can be passed directly
 		# From BrowserConnectArgs
@@ -346,48 +291,17 @@ class BrowserSession(BaseModel):
 				'cloud_timeout',
 			]
 			and v is not None
-			and v is not _UNSET
+			and v is not CLOUD_PROXY_UNSET
 		}
 
-		# _UNSET means "not passed" while None means "explicitly disable proxy".
-		final_profile_id = cloud_profile_id
-		final_proxy_country_code = cloud_proxy_country_code
-		final_timeout = cloud_timeout
-
-		# If any cloud params are provided, create cloud_browser_params.
-		# Use "is not _UNSET" for proxy so that explicit None (disable proxy) is respected.
-		if final_profile_id is not None or final_proxy_country_code is not _UNSET or final_timeout is not None:
-			cloud_kwargs: dict[str, Any] = {}
-			if final_profile_id is not None:
-				cloud_kwargs['cloud_profile_id'] = final_profile_id
-			if final_proxy_country_code is not _UNSET:
-				cloud_kwargs['cloud_proxy_country_code'] = final_proxy_country_code
-			if final_timeout is not None:
-				cloud_kwargs['cloud_timeout'] = final_timeout
-			cloud_params = CreateBrowserRequest(**cloud_kwargs)
-			profile_kwargs['cloud_browser_params'] = cloud_params
-			profile_kwargs['use_cloud'] = True
-
-		# If cloud_browser_params is set, force use_cloud=True
-		if cloud_browser_params is not None:
-			profile_kwargs['use_cloud'] = True
-
-		# if is_local is False but executable_path is provided, set is_local to True
-		if is_local is False and executable_path is not None:
-			profile_kwargs['is_local'] = True
-		# Only set is_local=True when cdp_url is missing if we're not using cloud browser
-		# (cloud browser will provide cdp_url later)
-		use_cloud = profile_kwargs.get('use_cloud')
-		if not cdp_url and not use_cloud:
-			profile_kwargs['is_local'] = True
-
-		# Create browser profile from direct parameters or use provided one
-		if browser_profile is not None:
-			# Merge any direct kwargs into the provided browser_profile (direct kwargs take precedence)
-			merged_kwargs = {**browser_profile.model_dump(exclude_unset=True), **profile_kwargs}
-			resolved_browser_profile = BrowserProfile(**merged_kwargs)
-		else:
-			resolved_browser_profile = BrowserProfile(**profile_kwargs)
+		resolved_browser_profile = resolve_browser_profile(
+			browser_profile=browser_profile,
+			cdp_url=cdp_url,
+			cloud_profile_id=cloud_profile_id,
+			cloud_proxy_country_code=cloud_proxy_country_code,
+			cloud_timeout=cloud_timeout,
+			profile_kwargs=profile_kwargs,
+		)
 
 		# Initialize the Pydantic model
 		super().__init__(
@@ -409,9 +323,6 @@ class BrowserSession(BaseModel):
 		default=None,
 		description='Target size (width, height) to resize screenshots before sending to LLM. Coordinates from LLM will be scaled back to original viewport size.',
 	)
-
-	# Cache of original viewport size for coordinate conversion (set when browser state is captured)
-	_original_viewport_size: tuple[int, int] | None = PrivateAttr(default=None)
 
 	@classmethod
 	def from_system_chrome(cls, profile_directory: str | None = None, **kwargs: Any) -> Self:
@@ -492,14 +403,14 @@ class BrowserSession(BaseModel):
 		except Exception:
 			return False
 
-	async def wait_if_captcha_solving(self, timeout: float | None = None) -> 'CaptchaWaitResult | None':
+	async def wait_if_captcha_solving(self, timeout: float | None = None) -> CaptchaWaitResult | None:
 		"""Wait if a captcha is currently being solved by the browser proxy.
 
 		Returns:
 			A CaptchaWaitResult if we had to wait, or None if no captcha was in progress.
 		"""
-		if self._captcha_watchdog is not None:
-			return await self._captcha_watchdog.wait_if_captcha_solving(timeout=timeout)
+		if self.watchdogs.captcha is not None:
+			return await self.watchdogs.captcha.wait_if_captcha_solving(timeout=timeout)
 		return None
 
 	@property
@@ -508,7 +419,7 @@ class BrowserSession(BaseModel):
 		return self._reconnecting
 
 	@property
-	def demo_mode(self) -> 'DemoMode | None':
+	def demo_mode(self) -> DemoMode | None:
 		"""Lazy init demo mode helper when enabled."""
 		if not self.browser_profile.demo_mode:
 			return None
@@ -518,8 +429,23 @@ class BrowserSession(BaseModel):
 			self._demo_mode = DemoMode(self)
 		return self._demo_mode
 
+	@property
+	def dom_state(self) -> BrowserDomState:
+		"""DOM-derived state and operations for this browser session."""
+		return self._dom_state
+
+	@property
+	def watchdogs(self) -> WatchdogRegistry:
+		"""Watchdogs attached to this browser session."""
+		return self._watchdogs
+
+	@property
+	def session_manager(self) -> Any:
+		"""Targets, CDP sessions, and frame routing for this browser session."""
+		return self._session_manager
+
 	# Main shared event bus for all browser session + all watchdogs
-	event_bus: EventBus = Field(default_factory=ResilientEventBus)
+	event_bus: EventBus = Field(default_factory=_ResilientEventBus)
 
 	# Mutable public state - which target has agent focus
 	agent_focus_target_id: TargetID | None = None
@@ -528,32 +454,14 @@ class BrowserSession(BaseModel):
 	_cdp_client_root: CDPClient | None = PrivateAttr(default=None)
 	_connection_lock: Any = PrivateAttr(default=None)  # asyncio.Lock for preventing concurrent connections
 
-	# PUBLIC: SessionManager instance (OWNS all targets and sessions)
-	session_manager: Any = Field(default=None, exclude=True)  # SessionManager
-
-	_cached_browser_state_summary: Any = PrivateAttr(default=None)
-	_cached_selector_map: dict[int, EnhancedDOMTreeNode] = PrivateAttr(default_factory=dict)
-	_cached_selector_indices: dict[tuple[str, int], int] = PrivateAttr(default_factory=dict)
+	_session_manager: Any = PrivateAttr()
+	_dom_state: BrowserDomState = PrivateAttr()
+	_watchdogs: WatchdogRegistry = PrivateAttr()
 	_downloaded_files: list[str] = PrivateAttr(default_factory=list)  # Track files downloaded during this session
 	_closed_popup_messages: list[str] = PrivateAttr(default_factory=list)  # Store messages from auto-closed JavaScript dialogs
 
-	# Watchdogs
-	_crash_watchdog: Any | None = PrivateAttr(default=None)
-	_downloads_watchdog: Any | None = PrivateAttr(default=None)
-	_aboutblank_watchdog: Any | None = PrivateAttr(default=None)
-	_security_watchdog: Any | None = PrivateAttr(default=None)
-	_storage_state_watchdog: Any | None = PrivateAttr(default=None)
-	_local_browser_watchdog: Any | None = PrivateAttr(default=None)
-	_default_action_watchdog: Any | None = PrivateAttr(default=None)
-	_dom_watchdog: Any | None = PrivateAttr(default=None)
-	_screenshot_watchdog: Any | None = PrivateAttr(default=None)
-	_permissions_watchdog: Any | None = PrivateAttr(default=None)
-	_recording_watchdog: Any | None = PrivateAttr(default=None)
-	_captcha_watchdog: Any | None = PrivateAttr(default=None)
-	_watchdogs_attached: bool = PrivateAttr(default=False)
-
 	_cloud_browser_client: CloudBrowserClient = PrivateAttr(default_factory=lambda: CloudBrowserClient())
-	_demo_mode: 'DemoMode | None' = PrivateAttr(default=None)
+	_demo_mode: DemoMode | None = PrivateAttr(default=None)
 
 	# WebSocket reconnection state
 	# Max wait = attempts * timeout_per_attempt + sum(delays) + small buffer
@@ -600,6 +508,23 @@ class BrowserSession(BaseModel):
 
 	async def reset(self) -> None:
 		"""Clear all cached CDP sessions with proper cleanup."""
+		await self._reset()
+
+	async def _reset(self, *, preserve_owned_local_browser: bool = False) -> None:
+		"""Clear cached connection state, optionally retaining an owned local process."""
+		local_browser = self.watchdogs.local_browser
+		if (
+			preserve_owned_local_browser
+			and local_browser is not None
+			and local_browser._subprocess is not None
+			and not local_browser.owns_browser_process
+		):
+			# The process can exit after stop() decides to preserve it. Finish the
+			# dead owner's profile/temp cleanup before the registry discards it.
+			await local_browser._cleanup_owned_browser_resources()
+		preserve_local_browser = bool(
+			preserve_owned_local_browser and local_browser is not None and local_browser.owns_browser_process
+		)
 
 		# Suppress auto-reconnect callback during teardown
 		self._intentional_stop = True
@@ -618,9 +543,7 @@ class BrowserSession(BaseModel):
 		)
 
 		# Clear session manager (which owns _targets, _sessions, _target_sessions)
-		if self.session_manager:
-			await self.session_manager.clear()
-			self.session_manager = None
+		await self.session_manager.clear()
 
 		# Close CDP WebSocket before clearing to prevent stale event handlers
 		if self._cdp_client_root:
@@ -631,28 +554,14 @@ class BrowserSession(BaseModel):
 				self.logger.debug(f'Error closing CDP client during reset: {e}')
 
 		self._cdp_client_root = None  # type: ignore
-		self._cached_browser_state_summary = None
-		self._cached_selector_map.clear()
-		self._cached_selector_indices.clear()
+		self.dom_state.clear()
 		self._downloaded_files.clear()
 
 		self.agent_focus_target_id = None
-		if self.is_local:
+		if self.is_local and not preserve_local_browser:
 			self.browser_profile.cdp_url = None
 
-		self._crash_watchdog = None
-		self._downloads_watchdog = None
-		self._aboutblank_watchdog = None
-		self._security_watchdog = None
-		self._storage_state_watchdog = None
-		self._local_browser_watchdog = None
-		self._default_action_watchdog = None
-		self._dom_watchdog = None
-		self._screenshot_watchdog = None
-		self._permissions_watchdog = None
-		self._recording_watchdog = None
-		self._captcha_watchdog = None
-		self._watchdogs_attached = False
+		self.watchdogs.reset(preserve_local_browser=preserve_local_browser)
 		if self._demo_mode:
 			self._demo_mode.reset()
 			self._demo_mode = None
@@ -662,10 +571,19 @@ class BrowserSession(BaseModel):
 
 	def model_post_init(self, __context) -> None:
 		"""Register event handlers after model initialization."""
+		from browser_use.browser.session_manager import SessionManager
+
+		self._session_manager = SessionManager(self)
+		self._dom_state = BrowserDomState(self)
+		self._watchdogs = WatchdogRegistry(self)
 		self._connection_lock = asyncio.Lock()
 		# Initialize reconnect event as set (no reconnection pending)
 		self._reconnect_event = asyncio.Event()
 		self._reconnect_event.set()
+		self._attach_core_event_handlers()
+
+	def _attach_core_event_handlers(self) -> None:
+		"""Attach BrowserSession lifecycle handlers to the current event bus."""
 
 		# Check if handlers are already registered to prevent duplicates
 		from browser_use.browser.watchdog_base import BaseWatchdog
@@ -690,6 +608,12 @@ class BrowserSession(BaseModel):
 		BaseWatchdog.attach_handler_to_session(self, FileDownloadedEvent, self.on_FileDownloadedEvent)
 		BaseWatchdog.attach_handler_to_session(self, CloseTabEvent, self.on_CloseTabEvent)
 
+	def _renew_event_bus(self) -> None:
+		"""Replace a stopped event bus and attach this session's lifecycle handlers."""
+		self.event_bus = _ResilientEventBus()
+		self._attach_core_event_handlers()
+		self.watchdogs.reattach_preserved_local_browser()
+
 	async def start(self) -> None:
 		"""Start the browser session."""
 		start_event = self.event_bus.dispatch(BrowserStartEvent())
@@ -697,54 +621,79 @@ class BrowserSession(BaseModel):
 		# Ensure any exceptions from the event handler are propagated
 		await start_event.event_result(raise_if_any=True, raise_if_none=False)
 
+	async def _dispatch_stop_event(self, *, force: bool) -> None:
+		"""Run all stop handlers and propagate cleanup failures before reset."""
+		stop_event = self.event_bus.dispatch(BrowserStopEvent(force=force))
+		await stop_event
+		await stop_event.event_result(raise_if_any=True, raise_if_none=False)
+
 	async def kill(self) -> None:
 		"""Kill the browser session and reset all state."""
+		previous_intentional_stop = self._intentional_stop
 		self._intentional_stop = True
 		self.logger.debug('🛑 kill() called - stopping browser with force=True and resetting state')
 
-		# First save storage state while CDP is still connected
-		from browser_use.browser.events import SaveStorageStateEvent
-
-		save_event = self.event_bus.dispatch(SaveStorageStateEvent())
-		await save_event
-
-		# Dispatch stop event to kill the browser
-		await self.event_bus.dispatch(BrowserStopEvent(force=True))
+		try:
+			await self._finalize_session_artifacts()
+			await self._dispatch_stop_event(force=True)
+		except Exception:
+			# The caller must be able to retry kill() with the same process owner,
+			# CDP endpoint, watchdog registry, and event bus.
+			self._intentional_stop = previous_intentional_stop
+			raise
 		# Stop the event bus
 		await self.event_bus.stop(clear=True, timeout=5)
 		# Reset all state
 		await self.reset()
-		# Create fresh event bus
-		self.event_bus = ResilientEventBus()
+		# Create a fresh event bus with the session lifecycle handlers attached
+		self._renew_event_bus()
 
 	async def stop(self) -> None:
-		"""Stop the browser session without killing the browser process.
+		"""Disconnect while preserving a BrowserSession-owned local browser.
 
-		This clears event buses and cached state but keeps the browser alive.
-		Useful when you want to clean up resources but plan to reconnect later.
+		Cloud and externally managed CDP sessions retain their existing stop
+		behavior. URL-policy enforcement is inactive until this session reconnects.
 		"""
+		previous_intentional_stop = self._intentional_stop
 		self._intentional_stop = True
 		self.logger.debug('⏸️  stop() called - stopping browser gracefully (force=False) and resetting state')
 
-		# First save storage state while CDP is still connected
+		try:
+			await self._finalize_session_artifacts()
+			await self._dispatch_stop_event(force=False)
+		except Exception:
+			self._intentional_stop = previous_intentional_stop
+			raise
+
+		# A non-forced stop handler cleans an already-dead owned process. Decide
+		# preservation only after every handler has completed.
+		local_browser = self.watchdogs.local_browser
+		preserve_owned_local_browser = bool(local_browser is not None and local_browser.owns_browser_process)
+
+		# Stop the event bus
+		await self.event_bus.stop(clear=True, timeout=5)
+		# Reset all state
+		await self._reset(preserve_owned_local_browser=preserve_owned_local_browser)
+		# Create a fresh event bus with the session lifecycle handlers attached
+		self._renew_event_bus()
+
+	async def _finalize_session_artifacts(self) -> None:
+		"""Finalize persisted session output before any handler can disconnect CDP."""
 		from browser_use.browser.events import SaveStorageStateEvent
 
 		save_event = self.event_bus.dispatch(SaveStorageStateEvent())
 		await save_event
 
-		# Now dispatch BrowserStopEvent to notify watchdogs
-		await self.event_bus.dispatch(BrowserStopEvent(force=False))
+		recording = self.watchdogs.recording
+		if recording is not None and recording.is_recording:
+			try:
+				await recording.stop_recording()
+			except Exception as error:
+				self.logger.warning(f'Failed to finalize browser recording before disconnect: {error}')
 
-		# Stop the event bus
-		await self.event_bus.stop(clear=True, timeout=5)
-		# Reset all state
-		await self.reset()
-		# Create fresh event bus
-		self.event_bus = ResilientEventBus()
-
-	async def close(self) -> None:
-		"""Stop the browser session and release its event resources."""
-		await self.stop()
+		har_recording = self.watchdogs.har_recording
+		if har_recording is not None:
+			await har_recording.finalize()
 
 	async def on_BrowserStartEvent(self, event: BrowserStartEvent) -> dict[str, str]:
 		"""Handle browser start request.
@@ -757,8 +706,22 @@ class BrowserSession(BaseModel):
 		- If you need to reset state, call stop() or kill() first
 		"""
 
+		# A retained local process can die while stop() is disconnected. Clear its
+		# stale endpoint and finish owned-resource cleanup before deciding whether
+		# start() should reconnect or launch a fresh browser.
+		retained_local_browser = self.watchdogs.local_browser
+		if (
+			self.is_local
+			and self._cdp_client_root is None
+			and retained_local_browser is not None
+			and retained_local_browser._subprocess is not None
+			and not retained_local_browser.owns_browser_process
+		):
+			await retained_local_browser._cleanup_owned_browser_resources()
+			self.browser_profile.cdp_url = None
+
 		# Initialize and attach all watchdogs FIRST so LocalBrowserWatchdog can handle BrowserLaunchEvent
-		await self.attach_all_watchdogs()
+		await self.watchdogs.attach()
 
 		try:
 			# If no CDP URL, launch local browser or cloud browser
@@ -812,13 +775,10 @@ class BrowserSession(BaseModel):
 							except Exception:
 								pass
 							self._cdp_client_root = None
-						manager = self.session_manager
-						if manager is not None:
 							try:
-								await manager.clear()
+								await self.session_manager.clear()
 							except Exception:
 								pass
-							self.session_manager = None
 						self.agent_focus_target_id = None
 						raise RuntimeError(
 							f'connect() timed out after 15s — CDP connection to {self.cdp_url} is too slow or unresponsive'
@@ -1221,13 +1181,11 @@ class BrowserSession(BaseModel):
 		self.logger.debug(f'🔄 AgentFocusChangedEvent received: target_id=...{event.target_id[-4:]} url={event.url}')
 
 		# Clear cached DOM state since focus changed
-		if self._dom_watchdog:
-			self._dom_watchdog.clear_cache()
+		if self.watchdogs.dom:
+			self.watchdogs.dom.clear_cache()
 
 		# Clear cached browser state
-		self._cached_browser_state_summary = None
-		self._cached_selector_map.clear()
-		self._cached_selector_indices.clear()
+		self.dom_state.clear()
 		self.logger.debug('🔄 Cached browser state cleared')
 
 		# Update agent focus if a specific target_id is provided (only for page/tab targets)
@@ -1297,17 +1255,8 @@ class BrowserSession(BaseModel):
 					except Exception:
 						pass
 
-			# Clear CDP session cache before stopping
-			self.logger.info(
-				f'📢 on_BrowserStopEvent - Calling reset() (force={event.force}, keep_alive={self.browser_profile.keep_alive})'
-			)
-			await self.reset()
-
-			# Reset state
-			if self.is_local:
-				self.browser_profile.cdp_url = None
-
-			# Notify stop and wait for all handlers to complete
+			# Public stop()/kill() reset only after every stop handler completes,
+			# keeping artifact finalization and process cleanup ahead of CDP teardown.
 			# LocalBrowserWatchdog listens for BrowserStopEvent and dispatches BrowserKillEvent
 			stop_event = self.event_bus.dispatch(BrowserStoppedEvent(reason='Stopped by request'))
 			await stop_event
@@ -1328,32 +1277,54 @@ class BrowserSession(BaseModel):
 		assert self._cdp_client_root is not None, 'CDP client not initialized - browser may not be connected yet'
 		return self._cdp_client_root
 
-	async def new_page(self, url: str | None = None) -> 'Page':
-		"""Create a new page (tab)."""
-		from cdp_use.cdp.target.commands import CreateTargetParameters
-
-		params: CreateTargetParameters = {'url': url or 'about:blank'}
-		result = await self.cdp_client.send.Target.createTarget(params)
-
-		target_id = result['targetId']
+	async def new_page(self, url: str | None = None) -> Page:
+		"""Create a new page, raising if a policy-blocked target cannot be confirmed closed."""
 
 		# Import here to avoid circular import
 		from browser_use.actor.page import Page as Target
 
-		return Target(self, target_id)
+		if not self.session_manager.url_policy_active:
+			params: CreateTargetParameters = {'url': url or 'about:blank'}
+			result = await self.cdp_client.send.Target.createTarget(params)
+			return Target(self, result['targetId'])
 
-	async def get_current_page(self) -> 'Page | None':
+		# Target.createTarget(url=...) may begin the initial navigation before the
+		# auto-attached page session has Fetch interception installed. Under policy,
+		# create only an inert page and do not navigate until the manager confirms
+		# that this target's top-frame Fetch owner is ready.
+		result = await self.cdp_client.send.Target.createTarget({'url': 'about:blank'})
+		target_id = result['targetId']
+		self.session_manager.mark_new_page_target(target_id)
+		cdp_session = await self.session_manager.wait_for_policy_ready_page(target_id)
+		page = Target(self, target_id, session_id=cdp_session.session_id)
+
+		if url is None or url == 'about:blank':
+			return page
+
+		if not self.session_manager._is_url_allowed(url):
+			await self.session_manager._remediate_blocked_navigation(
+				target_id,
+				url,
+				require_target_closed=True,
+			)
+			return page
+
+		# Page.goto intentionally keeps policy rejection event-driven. The Fetch
+		# router may close this newly created target if an allowed URL redirects to
+		# a disallowed destination; callers still receive the Page handle.
+		await page.goto(url)
+		return page
+
+	async def get_current_page(self) -> Page | None:
 		"""Get the current page as an actor Page."""
-		target_info = await self.get_current_target_info()
-
-		if not target_info:
+		if not self.agent_focus_target_id:
 			return None
 
 		from browser_use.actor.page import Page as Target
 
-		return Target(self, target_info['targetId'])
+		return Target(self, self.agent_focus_target_id)
 
-	async def must_get_current_page(self) -> 'Page':
+	async def must_get_current_page(self) -> Page:
 		"""Get the current page as an actor Page."""
 		page = await self.get_current_page()
 		if not page:
@@ -1361,7 +1332,7 @@ class BrowserSession(BaseModel):
 
 		return page
 
-	async def get_pages(self) -> list['Page']:
+	async def get_pages(self) -> list[Page]:
 		"""Get all available pages using SessionManager (source of truth)."""
 		# Import here to avoid circular import
 		from browser_use.actor.page import Page as PageActor
@@ -1374,7 +1345,7 @@ class BrowserSession(BaseModel):
 
 		return targets
 
-	def get_focused_target(self) -> 'Target | None':
+	def get_focused_target(self) -> Target | None:
 		"""Get the target that currently has agent focus.
 
 		Returns:
@@ -1384,7 +1355,7 @@ class BrowserSession(BaseModel):
 			return None
 		return self.session_manager.get_focused_target()
 
-	def get_page_targets(self) -> list['Target']:
+	def get_page_targets(self) -> list[Target]:
 		"""Get all page/tab targets (excludes iframes, workers, etc.).
 
 		Returns:
@@ -1394,7 +1365,7 @@ class BrowserSession(BaseModel):
 			return []
 		return self.session_manager.get_all_page_targets()
 
-	async def close_page(self, page: 'Union[Page, str]') -> None:
+	async def close_page(self, page: Page | str) -> None:
 		"""Close a page by Page object or target ID."""
 		from cdp_use.cdp.target.commands import CloseTargetParameters
 
@@ -1409,7 +1380,7 @@ class BrowserSession(BaseModel):
 		params: CloseTargetParameters = {'targetId': target_id}
 		await self.cdp_client.send.Target.closeTarget(params)
 
-	async def cookies(self) -> list['Cookie']:
+	async def cookies(self) -> list[Cookie]:
 		"""Get cookies, optionally filtered by URLs."""
 
 		result = await self.cdp_client.send.Storage.getCookies()
@@ -1584,17 +1555,21 @@ class BrowserSession(BaseModel):
 		cached: bool = False,
 		include_recent_events: bool = False,
 	) -> BrowserStateSummary:
-		if cached and self._cached_browser_state_summary is not None and self._cached_browser_state_summary.dom_state:
+		if (
+			cached
+			and self.dom_state.cached_browser_state_summary is not None
+			and self.dom_state.cached_browser_state_summary.dom_state
+		):
 			# Don't use cached state if it has 0 interactive elements
-			selector_map = self._cached_browser_state_summary.dom_state.selector_map
+			selector_map = self.dom_state.cached_browser_state_summary.dom_state.selector_map
 
 			# Don't use cached state if we need a screenshot but the cached state doesn't have one
-			if include_screenshot and not self._cached_browser_state_summary.screenshot:
+			if include_screenshot and not self.dom_state.cached_browser_state_summary.screenshot:
 				self.logger.debug('⚠️ Cached browser state has no screenshot, fetching fresh state with screenshot')
 				# Fall through to fetch fresh state with screenshot
 			elif selector_map and len(selector_map) > 0:
 				self.logger.debug('🔄 Using pre-cached browser state summary for open tab')
-				return self._cached_browser_state_summary
+				return self.dom_state.cached_browser_state_summary
 			else:
 				self.logger.debug('⚠️ Cached browser state has 0 interactive elements, fetching fresh state')
 				# Fall through to fetch fresh state
@@ -1624,11 +1599,11 @@ class BrowserSession(BaseModel):
 			empty_dom_state = SerializedDOMState(_root=None, selector_map={})
 
 			# Clear every action lookup path before calling the model.
-			self.update_cached_selector_map({})
-			if self._dom_watchdog is not None:
-				self._dom_watchdog.clear_cache()
+			self.dom_state.update_cached_selector_map({})
+			if self.watchdogs.dom is not None:
+				self.watchdogs.dom.clear_cache()
 
-			cached_state = self._cached_browser_state_summary
+			cached_state = self.dom_state.cached_browser_state_summary
 			current_target = (
 				self.session_manager.get_target(self.agent_focus_target_id)
 				if self.session_manager is not None and self.agent_focus_target_id is not None
@@ -1659,168 +1634,10 @@ class BrowserSession(BaseModel):
 				browser_errors=[state_error],
 				state_error=state_error,
 			)
-			self._cached_browser_state_summary = result
+			self.dom_state.cached_browser_state_summary = result
 
 		assert result is not None and result.dom_state is not None
 		return result
-
-	async def get_state_as_text(self) -> str:
-		"""Get the browser state as text."""
-		state = await self.get_browser_state_summary()
-		assert state.dom_state is not None
-		dom_state = state.dom_state
-		return dom_state.llm_representation()
-
-	async def attach_all_watchdogs(self) -> None:
-		"""Initialize and attach all watchdogs with explicit handler registration."""
-		# Prevent duplicate watchdog attachment
-		if self._watchdogs_attached:
-			self.logger.debug('Watchdogs already attached, skipping duplicate attachment')
-			return
-
-		from browser_use.browser.watchdogs.aboutblank_watchdog import AboutBlankWatchdog
-		from browser_use.browser.watchdogs.captcha_watchdog import CaptchaWatchdog
-
-		# from browser_use.browser.crash_watchdog import CrashWatchdog
-		from browser_use.browser.watchdogs.default_action_watchdog import DefaultActionWatchdog
-		from browser_use.browser.watchdogs.dom_watchdog import DOMWatchdog
-		from browser_use.browser.watchdogs.downloads_watchdog import DownloadsWatchdog
-		from browser_use.browser.watchdogs.har_recording_watchdog import HarRecordingWatchdog
-		from browser_use.browser.watchdogs.local_browser_watchdog import LocalBrowserWatchdog
-		from browser_use.browser.watchdogs.permissions_watchdog import PermissionsWatchdog
-		from browser_use.browser.watchdogs.popups_watchdog import PopupsWatchdog
-		from browser_use.browser.watchdogs.recording_watchdog import RecordingWatchdog
-		from browser_use.browser.watchdogs.screenshot_watchdog import ScreenshotWatchdog
-		from browser_use.browser.watchdogs.security_watchdog import SecurityWatchdog
-		from browser_use.browser.watchdogs.storage_state_watchdog import StorageStateWatchdog
-
-		# Initialize CrashWatchdog
-		# CrashWatchdog.model_rebuild()
-		# self._crash_watchdog = CrashWatchdog(event_bus=self.event_bus, browser_session=self)
-		# self.event_bus.on(BrowserConnectedEvent, self._crash_watchdog.on_BrowserConnectedEvent)
-		# self.event_bus.on(BrowserStoppedEvent, self._crash_watchdog.on_BrowserStoppedEvent)
-		# self._crash_watchdog.attach_to_session()
-
-		# Initialize DownloadsWatchdog
-		DownloadsWatchdog.model_rebuild()
-		self._downloads_watchdog = DownloadsWatchdog(event_bus=self.event_bus, browser_session=self)
-		# self.event_bus.on(BrowserLaunchEvent, self._downloads_watchdog.on_BrowserLaunchEvent)
-		# self.event_bus.on(TabCreatedEvent, self._downloads_watchdog.on_TabCreatedEvent)
-		# self.event_bus.on(TabClosedEvent, self._downloads_watchdog.on_TabClosedEvent)
-		# self.event_bus.on(BrowserStoppedEvent, self._downloads_watchdog.on_BrowserStoppedEvent)
-		# self.event_bus.on(NavigationCompleteEvent, self._downloads_watchdog.on_NavigationCompleteEvent)
-		self._downloads_watchdog.attach_to_session()
-		if self.browser_profile.auto_download_pdfs:
-			self.logger.debug('📄 PDF auto-download enabled for this session')
-
-		# Initialize StorageStateWatchdog conditionally
-		# Enable when user provides either storage_state or user_data_dir (indicating they want persistence)
-		should_enable_storage_state = (
-			self.browser_profile.storage_state is not None or self.browser_profile.user_data_dir is not None
-		)
-
-		if should_enable_storage_state:
-			StorageStateWatchdog.model_rebuild()
-			self._storage_state_watchdog = StorageStateWatchdog(
-				event_bus=self.event_bus,
-				browser_session=self,
-				# More conservative defaults when auto-enabled
-				auto_save_interval=60.0,  # 1 minute instead of 30 seconds
-				save_on_change=False,  # Only save on shutdown by default
-			)
-			self._storage_state_watchdog.attach_to_session()
-			self.logger.debug(
-				f'🍪 StorageStateWatchdog enabled (storage_state: {bool(self.browser_profile.storage_state)}, user_data_dir: {bool(self.browser_profile.user_data_dir)})'
-			)
-		else:
-			self.logger.debug('🍪 StorageStateWatchdog disabled (no storage_state or user_data_dir configured)')
-
-		# Initialize LocalBrowserWatchdog
-		LocalBrowserWatchdog.model_rebuild()
-		self._local_browser_watchdog = LocalBrowserWatchdog(event_bus=self.event_bus, browser_session=self)
-		# self.event_bus.on(BrowserLaunchEvent, self._local_browser_watchdog.on_BrowserLaunchEvent)
-		# self.event_bus.on(BrowserKillEvent, self._local_browser_watchdog.on_BrowserKillEvent)
-		# self.event_bus.on(BrowserStopEvent, self._local_browser_watchdog.on_BrowserStopEvent)
-		self._local_browser_watchdog.attach_to_session()
-
-		# Initialize SecurityWatchdog (hooks NavigationWatchdog and implements allowed_domains restriction)
-		SecurityWatchdog.model_rebuild()
-		self._security_watchdog = SecurityWatchdog(event_bus=self.event_bus, browser_session=self)
-		# Core navigation is now handled in BrowserSession directly
-		# SecurityWatchdog only handles security policy enforcement
-		self._security_watchdog.attach_to_session()
-
-		# Initialize AboutBlankWatchdog (handles about:blank pages and DVD loading animation on first load)
-		AboutBlankWatchdog.model_rebuild()
-		self._aboutblank_watchdog = AboutBlankWatchdog(event_bus=self.event_bus, browser_session=self)
-		# self.event_bus.on(BrowserStopEvent, self._aboutblank_watchdog.on_BrowserStopEvent)
-		# self.event_bus.on(BrowserStoppedEvent, self._aboutblank_watchdog.on_BrowserStoppedEvent)
-		# self.event_bus.on(TabCreatedEvent, self._aboutblank_watchdog.on_TabCreatedEvent)
-		# self.event_bus.on(TabClosedEvent, self._aboutblank_watchdog.on_TabClosedEvent)
-		self._aboutblank_watchdog.attach_to_session()
-
-		# Initialize PopupsWatchdog (handles accepting and dismissing JS dialogs, alerts, confirm, onbeforeunload, etc.)
-		PopupsWatchdog.model_rebuild()
-		self._popups_watchdog = PopupsWatchdog(event_bus=self.event_bus, browser_session=self)
-		# self.event_bus.on(TabCreatedEvent, self._popups_watchdog.on_TabCreatedEvent)
-		# self.event_bus.on(DialogCloseEvent, self._popups_watchdog.on_DialogCloseEvent)
-		self._popups_watchdog.attach_to_session()
-
-		# Initialize PermissionsWatchdog (handles granting and revoking browser permissions like clipboard, microphone, camera, etc.)
-		PermissionsWatchdog.model_rebuild()
-		self._permissions_watchdog = PermissionsWatchdog(event_bus=self.event_bus, browser_session=self)
-		# self.event_bus.on(BrowserConnectedEvent, self._permissions_watchdog.on_BrowserConnectedEvent)
-		self._permissions_watchdog.attach_to_session()
-
-		# Initialize DefaultActionWatchdog (handles all default actions like click, type, scroll, go back, go forward, refresh, wait, send keys, upload file, scroll to text, etc.)
-		DefaultActionWatchdog.model_rebuild()
-		self._default_action_watchdog = DefaultActionWatchdog(event_bus=self.event_bus, browser_session=self)
-		# self.event_bus.on(ClickElementEvent, self._default_action_watchdog.on_ClickElementEvent)
-		# self.event_bus.on(TypeTextEvent, self._default_action_watchdog.on_TypeTextEvent)
-		# self.event_bus.on(ScrollEvent, self._default_action_watchdog.on_ScrollEvent)
-		# self.event_bus.on(GoBackEvent, self._default_action_watchdog.on_GoBackEvent)
-		# self.event_bus.on(GoForwardEvent, self._default_action_watchdog.on_GoForwardEvent)
-		# self.event_bus.on(RefreshEvent, self._default_action_watchdog.on_RefreshEvent)
-		# self.event_bus.on(WaitEvent, self._default_action_watchdog.on_WaitEvent)
-		# self.event_bus.on(SendKeysEvent, self._default_action_watchdog.on_SendKeysEvent)
-		# self.event_bus.on(UploadFileEvent, self._default_action_watchdog.on_UploadFileEvent)
-		# self.event_bus.on(ScrollToTextEvent, self._default_action_watchdog.on_ScrollToTextEvent)
-		self._default_action_watchdog.attach_to_session()
-
-		# Initialize ScreenshotWatchdog (handles taking screenshots of the browser)
-		ScreenshotWatchdog.model_rebuild()
-		self._screenshot_watchdog = ScreenshotWatchdog(event_bus=self.event_bus, browser_session=self)
-		# self.event_bus.on(BrowserStartEvent, self._screenshot_watchdog.on_BrowserStartEvent)
-		# self.event_bus.on(BrowserStoppedEvent, self._screenshot_watchdog.on_BrowserStoppedEvent)
-		# self.event_bus.on(ScreenshotEvent, self._screenshot_watchdog.on_ScreenshotEvent)
-		self._screenshot_watchdog.attach_to_session()
-
-		# Initialize DOMWatchdog (handles building the DOM tree and detecting interactive elements, depends on ScreenshotWatchdog)
-		DOMWatchdog.model_rebuild()
-		self._dom_watchdog = DOMWatchdog(event_bus=self.event_bus, browser_session=self)
-		# self.event_bus.on(TabCreatedEvent, self._dom_watchdog.on_TabCreatedEvent)
-		# self.event_bus.on(BrowserStateRequestEvent, self._dom_watchdog.on_BrowserStateRequestEvent)
-		self._dom_watchdog.attach_to_session()
-
-		# Initialize RecordingWatchdog (handles video recording)
-		RecordingWatchdog.model_rebuild()
-		self._recording_watchdog = RecordingWatchdog(event_bus=self.event_bus, browser_session=self)
-		self._recording_watchdog.attach_to_session()
-
-		# Initialize HarRecordingWatchdog if record_har_path is configured (handles HTTPS HAR capture)
-		if self.browser_profile.record_har_path:
-			HarRecordingWatchdog.model_rebuild()
-			self._har_recording_watchdog = HarRecordingWatchdog(event_bus=self.event_bus, browser_session=self)
-			self._har_recording_watchdog.attach_to_session()
-
-		# Initialize CaptchaWatchdog (listens for captcha solver events from the browser proxy)
-		if self.browser_profile.captcha_solver:
-			CaptchaWatchdog.model_rebuild()
-			self._captcha_watchdog = CaptchaWatchdog(event_bus=self.event_bus, browser_session=self)
-			self._captcha_watchdog.attach_to_session()
-
-		# Mark watchdogs as attached to prevent duplicate attachment
-		self._watchdogs_attached = True
 
 	async def connect(self, cdp_url: str | None = None) -> Self:
 		"""Connect to a remote chromium-based browser via CDP using cdp-use.
@@ -1837,11 +1654,20 @@ class BrowserSession(BaseModel):
 			self.logger.warning(
 				'⚠️ connect() called but CDP client already exists! Cleaning up old connection before creating new one.'
 			)
+			old_cdp_client = self._cdp_client_root
+			was_intentional_stop = self._intentional_stop
+			self._intentional_stop = True
+			self._cdp_client_root = None
+			self.agent_focus_target_id = None
 			try:
-				await self._cdp_client_root.stop()
+				await old_cdp_client.stop()
 			except Exception as e:
 				self.logger.debug(f'Error stopping old CDP client: {e}')
-			self._cdp_client_root = None
+			finally:
+				# Every pooled session belongs to the retired root client. Clear the
+				# connection generation before monitoring the replacement client.
+				await self.session_manager.clear()
+				self._intentional_stop = was_intentional_stop
 
 		if not self.cdp_url.startswith('ws'):
 			# If it's an HTTP URL, fetch the WebSocket URL from /json/version endpoint
@@ -1897,16 +1723,17 @@ class BrowserSession(BaseModel):
 			# 2. Discover and attach to all existing targets
 			# 3. Initialize sessions and enable lifecycle monitoring
 			# 4. Enable autoAttach for future targets
-			from browser_use.browser.session_manager import SessionManager
-
-			self.session_manager = SessionManager(self)
 			await self.session_manager.start_monitoring()
 			self.logger.debug('Event-driven session manager started')
 
 			# Enable auto-attach so Chrome automatically notifies us when NEW targets attach/detach
 			# This is the foundation of event-driven session management
 			await self._cdp_client_root.send.Target.setAutoAttach(
-				params={'autoAttach': True, 'waitForDebuggerOnStart': False, 'flatten': True}
+				params={
+					'autoAttach': True,
+					'waitForDebuggerOnStart': self.session_manager.url_policy_active,
+					'flatten': True,
+				}
 			)
 			self.logger.debug('CDP client connected with auto-attach enabled')
 
@@ -2003,7 +1830,7 @@ class BrowserSession(BaseModel):
 				except Exception as cleanup_error:
 					self.logger.debug(f'Error closing CDP client: {cleanup_error}')
 
-			self.session_manager = None
+				await self.session_manager.clear()
 			self._cdp_client_root = None
 			self.agent_focus_target_id = None
 			# Re-raise as a fatal error
@@ -2027,25 +1854,6 @@ class BrowserSession(BaseModel):
 			if not username or not password:
 				self.logger.debug('Proxy credentials not provided; skipping proxy auth setup')
 				return
-
-			# Enable Fetch domain with auth handling (do not pause all requests)
-			try:
-				await self._cdp_client_root.send.Fetch.enable(params={'handleAuthRequests': True})
-				self.logger.debug('Fetch.enable(handleAuthRequests=True) enabled on root client')
-			except Exception as e:
-				self.logger.debug(f'Fetch.enable on root failed: {type(e).__name__}: {e}')
-
-			# Also enable on the focused target's session if available to ensure events are delivered
-			try:
-				if self.agent_focus_target_id:
-					cdp_session = await self.get_or_create_cdp_session(self.agent_focus_target_id, focus=False)
-					await cdp_session.cdp_client.send.Fetch.enable(
-						params={'handleAuthRequests': True},
-						session_id=cdp_session.session_id,
-					)
-					self.logger.debug('Fetch.enable(handleAuthRequests=True) enabled on focused session')
-			except Exception as e:
-				self.logger.debug(f'Fetch.enable on focused session failed: {type(e).__name__}: {e}')
 
 			def _on_auth_required(event: AuthRequiredEvent, session_id: SessionID | None = None):
 				# event keys may be snake_case or camelCase depending on generator; handle both
@@ -2096,49 +1904,13 @@ class BrowserSession(BaseModel):
 							_default(), name='auth_default', logger_instance=self.logger, suppress_exceptions=True
 						)
 
-			def _on_request_paused(event: RequestPausedEvent, session_id: SessionID | None = None):
-				# Continue all paused requests to avoid stalling the network
-				request_id = event.get('requestId') or event.get('request_id')
-				if not request_id:
-					return
-
-				async def _continue():
-					assert self._cdp_client_root
-					try:
-						await self._cdp_client_root.send.Fetch.continueRequest(
-							params={'requestId': request_id},
-							session_id=session_id,
-						)
-					except Exception:
-						pass
-
-				create_task_with_error_handling(
-					_continue(), name='request_continue', logger_instance=self.logger, suppress_exceptions=True
-				)
-
 			# Register event handler on root client
 			try:
 				self._cdp_client_root.register.Fetch.authRequired(_on_auth_required)
-				self._cdp_client_root.register.Fetch.requestPaused(_on_request_paused)
-				if self.agent_focus_target_id:
-					cdp_session = await self.get_or_create_cdp_session(self.agent_focus_target_id, focus=False)
-					cdp_session.cdp_client.register.Fetch.authRequired(_on_auth_required)
-					cdp_session.cdp_client.register.Fetch.requestPaused(_on_request_paused)
 				self.logger.debug('Registered Fetch.authRequired handlers')
 			except Exception as e:
 				self.logger.debug(f'Failed to register authRequired handlers: {type(e).__name__}: {e}')
 
-			# Ensure Fetch is enabled for the current focused target's session, too
-			try:
-				if self.agent_focus_target_id:
-					# Use safe API with focus=False to avoid changing focus
-					cdp_session = await self.get_or_create_cdp_session(self.agent_focus_target_id, focus=False)
-					await cdp_session.cdp_client.send.Fetch.enable(
-						params={'handleAuthRequests': True, 'patterns': [{'urlPattern': '*'}]},
-						session_id=cdp_session.session_id,
-					)
-			except Exception as e:
-				self.logger.debug(f'Fetch.enable on focused session failed: {type(e).__name__}: {e}')
 		except Exception as e:
 			self.logger.debug(f'Skipping proxy auth setup: {type(e).__name__}: {e}')
 
@@ -2165,13 +1937,11 @@ class BrowserSession(BaseModel):
 				self.logger.debug(f'Error stopping old CDP client during reconnect: {e}')
 			self._cdp_client_root = None
 
-		# 2. Clear SessionManager (all sessions are stale)
-		if self.session_manager:
+			# 2. Clear SessionManager (all sessions are stale)
 			try:
 				await self.session_manager.clear()
 			except Exception as e:
 				self.logger.debug(f'Error clearing SessionManager during reconnect: {e}')
-			self.session_manager = None
 
 		self.agent_focus_target_id = None
 
@@ -2189,14 +1959,15 @@ class BrowserSession(BaseModel):
 		await self._cdp_client_root.start()
 
 		# 4. Re-initialize SessionManager
-		from browser_use.browser.session_manager import SessionManager
-
-		self.session_manager = SessionManager(self)
 		await self.session_manager.start_monitoring()
 
 		# 5. Re-enable autoAttach
 		await self._cdp_client_root.send.Target.setAutoAttach(
-			params={'autoAttach': True, 'waitForDebuggerOnStart': False, 'flatten': True}
+			params={
+				'autoAttach': True,
+				'waitForDebuggerOnStart': self.session_manager.url_policy_active,
+				'flatten': True,
+			}
 		)
 
 		# 6. Re-discover page targets and restore focus
@@ -2293,11 +2064,16 @@ class BrowserSession(BaseModel):
 		if not self._cdp_client_root or not hasattr(self._cdp_client_root, '_message_handler_task'):
 			return
 
-		task = self._cdp_client_root._message_handler_task
+		cdp_client = self._cdp_client_root
+		task = cdp_client._message_handler_task
 		if task is None or task.done():
 			return
 
 		def _on_message_handler_done(fut: asyncio.Future) -> None:
+			# Ignore callbacks from a connection generation that has already been replaced.
+			if self._cdp_client_root is not cdp_client:
+				return
+
 			# Guard: skip if intentionally stopped, already reconnecting, or no cdp_url
 			if self._intentional_stop or self._reconnecting or not self.cdp_url:
 				return
@@ -2381,21 +2157,6 @@ class BrowserSession(BaseModel):
 	# endregion - ========== Helper Methods ==========
 
 	# region - ========== ID Lookup Methods ==========
-	async def get_current_target_info(self) -> TargetInfo | None:
-		"""Get info about the current active target using cached session data."""
-		if not self.agent_focus_target_id:
-			return None
-
-		target = self.session_manager.get_target(self.agent_focus_target_id)
-
-		return {
-			'targetId': target.target_id,
-			'url': target.url,
-			'title': target.title,
-			'type': target.target_type,
-			'attached': True,
-			'canAccessOpener': False,
-		}
 
 	async def get_current_page_url(self) -> str:
 		"""Get the URL of the current page."""
@@ -2427,914 +2188,6 @@ class BrowserSession(BaseModel):
 	# endregion - ========== ID Lookup Methods ==========
 
 	# region - ========== DOM Helper Methods ==========
-
-	async def get_dom_element_by_index(self, index: int) -> EnhancedDOMTreeNode | None:
-		"""Get DOM element by index.
-
-		Get element from cached selector map.
-
-		Args:
-			index: The element index from the serialized DOM
-
-		Returns:
-			EnhancedDOMTreeNode or None if index not found
-		"""
-		#  Check cached selector map
-		if self._cached_selector_map and index in self._cached_selector_map:
-			return self._cached_selector_map[index]
-
-		return None
-
-	def get_selector_index(self, node: EnhancedDOMTreeNode) -> int:
-		"""Return the model-visible selector index for a DOM node."""
-		node_identity = (str(node.session_id), node.backend_node_id)
-		return self._cached_selector_indices.get(node_identity, node.backend_node_id)
-
-	def _get_cached_node_by_backend_id(self, backend_node_id: int, session_id: str | None) -> EnhancedDOMTreeNode | None:
-		"""Resolve a backend ID only within the CDP session that produced it."""
-		for node in (self._cached_selector_map or {}).values():
-			if node.backend_node_id == backend_node_id and str(node.session_id) == str(session_id):
-				return node
-		return None
-
-	def update_cached_selector_map(self, selector_map: dict[int, EnhancedDOMTreeNode]) -> None:
-		"""Update the cached selector map with new DOM state.
-
-		This should be called by the DOM watchdog after rebuilding the DOM.
-
-		Args:
-			selector_map: The new selector map from DOM serialization
-		"""
-		self._cached_selector_map = selector_map
-		self._cached_selector_indices = {
-			(str(node.session_id), node.backend_node_id): index for index, node in selector_map.items()
-		}
-
-	async def get_dom_element_at_coordinates(self, x: int, y: int) -> EnhancedDOMTreeNode | None:
-		"""Get DOM element at coordinates as EnhancedDOMTreeNode.
-
-		First checks the cached selector_map for a matching element, then falls back
-		to CDP DOM.describeNode if not found. This ensures safety checks (e.g., for
-		<select> elements and file inputs) work correctly.
-
-		Args:
-			x: X coordinate relative to viewport
-			y: Y coordinate relative to viewport
-
-		Returns:
-			EnhancedDOMTreeNode at the coordinates, or None if no element found
-		"""
-		from browser_use.dom.views import NodeType
-
-		# Get current page to access CDP session
-		page = await self.get_current_page()
-		if page is None:
-			raise RuntimeError('No active page found')
-
-		# Get session ID for CDP call
-		session_id = await page._ensure_session()
-
-		try:
-			# Call CDP DOM.getNodeForLocation to get backend_node_id
-			result = await self.cdp_client.send.DOM.getNodeForLocation(
-				params={
-					'x': x,
-					'y': y,
-					'includeUserAgentShadowDOM': False,
-					'ignorePointerEventsNone': False,
-				},
-				session_id=session_id,
-			)
-
-			backend_node_id = result.get('backendNodeId')
-			if backend_node_id is None:
-				self.logger.debug(f'No element found at coordinates ({x}, {y})')
-				return None
-
-			# Try to find element in cached selector_map (avoids extra CDP call)
-			cached_node = self._get_cached_node_by_backend_id(backend_node_id, session_id)
-			if cached_node is not None:
-				self.logger.debug(f'Found element at ({x}, {y}) in cached selector_map')
-				return cached_node
-
-			# Not in cache - fall back to CDP DOM.describeNode to get actual node info
-			try:
-				describe_result = await self.cdp_client.send.DOM.describeNode(
-					params={'backendNodeId': backend_node_id},
-					session_id=session_id,
-				)
-				node_info = describe_result.get('node', {})
-				node_name = node_info.get('nodeName', '')
-
-				# Parse attributes from flat list [key1, val1, key2, val2, ...] to dict
-				attrs_list = node_info.get('attributes', [])
-				attributes = {attrs_list[i]: attrs_list[i + 1] for i in range(0, len(attrs_list), 2)}
-
-				return EnhancedDOMTreeNode(
-					node_id=result.get('nodeId', 0),
-					backend_node_id=backend_node_id,
-					node_type=NodeType(node_info.get('nodeType', NodeType.ELEMENT_NODE.value)),
-					node_name=node_name,
-					node_value=node_info.get('nodeValue', '') or '',
-					attributes=attributes,
-					is_scrollable=None,
-					frame_id=result.get('frameId'),
-					session_id=session_id,
-					target_id=self.agent_focus_target_id or '',
-					content_document=None,
-					shadow_root_type=None,
-					shadow_roots=None,
-					parent_node=None,
-					children_nodes=None,
-					ax_node=None,
-					snapshot_node=None,
-					is_visible=None,
-					absolute_position=None,
-				)
-			except Exception as e:
-				self.logger.debug(f'DOM.describeNode failed for backend_node_id={backend_node_id}: {e}')
-				# Fall back to minimal node if describeNode fails
-				return EnhancedDOMTreeNode(
-					node_id=result.get('nodeId', 0),
-					backend_node_id=backend_node_id,
-					node_type=NodeType.ELEMENT_NODE,
-					node_name='',
-					node_value='',
-					attributes={},
-					is_scrollable=None,
-					frame_id=result.get('frameId'),
-					session_id=session_id,
-					target_id=self.agent_focus_target_id or '',
-					content_document=None,
-					shadow_root_type=None,
-					shadow_roots=None,
-					parent_node=None,
-					children_nodes=None,
-					ax_node=None,
-					snapshot_node=None,
-					is_visible=None,
-					absolute_position=None,
-				)
-
-		except Exception as e:
-			self.logger.warning(f'Failed to get DOM element at coordinates ({x}, {y}): {e}')
-			return None
-
-	async def get_target_id_from_tab_id(self, tab_id: str) -> TargetID:
-		"""Get the full-length TargetID from the truncated 4-char tab_id using SessionManager."""
-		if not self.session_manager:
-			raise RuntimeError('SessionManager not initialized')
-
-		for full_target_id in self.session_manager.get_all_target_ids():
-			if full_target_id.endswith(tab_id):
-				if await self.session_manager.is_target_valid(full_target_id):
-					return full_target_id
-				# Stale target - Chrome should have sent detach event
-				# If we're here, event listener will clean it up
-				self.logger.debug(f'Found stale target {full_target_id}, skipping')
-
-		raise ValueError(f'No TargetID found ending in tab_id=...{tab_id}')
-
-	async def get_target_id_from_url(self, url: str) -> TargetID:
-		"""Get the TargetID from a URL using SessionManager (source of truth)."""
-		if not self.session_manager:
-			raise RuntimeError('SessionManager not initialized')
-
-		# Search in SessionManager targets (exact match first)
-		for target_id, target in self.session_manager.get_all_targets().items():
-			if target.target_type in ('page', 'tab') and target.url == url:
-				return target_id
-
-		# Still not found, try substring match as fallback
-		for target_id, target in self.session_manager.get_all_targets().items():
-			if target.target_type in ('page', 'tab') and url in target.url:
-				return target_id
-
-		raise ValueError(f'No TargetID found for url={url}')
-
-	async def get_most_recently_opened_target_id(self) -> TargetID:
-		"""Get the most recently opened target ID using SessionManager."""
-		# Get all page targets from SessionManager
-		page_targets = self.session_manager.get_all_page_targets()
-		if not page_targets:
-			raise RuntimeError('No page targets available')
-		return page_targets[-1].target_id
-
-	def is_file_input(self, element: Any) -> bool:
-		"""Check if element is a file input.
-
-		Args:
-			element: The DOM element to check
-
-		Returns:
-			True if element is a file input, False otherwise
-		"""
-		if self._dom_watchdog:
-			return self._dom_watchdog.is_file_input(element)
-		# Fallback if watchdog not available
-		return (
-			hasattr(element, 'node_name')
-			and element.node_name.upper() == 'INPUT'
-			and hasattr(element, 'attributes')
-			and element.attributes.get('type', '').lower() == 'file'
-		)
-
-	def find_file_input_near_element(
-		self,
-		node: 'EnhancedDOMTreeNode',
-		max_height: int = 3,
-		max_descendant_depth: int = 3,
-	) -> 'EnhancedDOMTreeNode | None':
-		"""Find the closest file input to the given element.
-
-		Walks up the DOM tree (up to max_height levels), checking the node itself,
-		its descendants (up to max_descendant_depth deep), and siblings at each level.
-
-		Args:
-			node: Starting DOM element
-			max_height: Maximum levels to walk up the parent chain
-			max_descendant_depth: Maximum depth to search descendants
-
-		Returns:
-			The nearest file input element, or None if not found
-		"""
-		from browser_use.dom.views import EnhancedDOMTreeNode
-
-		def _find_in_descendants(n: EnhancedDOMTreeNode, depth: int) -> EnhancedDOMTreeNode | None:
-			if depth < 0:
-				return None
-			if self.is_file_input(n):
-				return n
-			for child in n.children_nodes or []:
-				result = _find_in_descendants(child, depth - 1)
-				if result:
-					return result
-			return None
-
-		current: EnhancedDOMTreeNode | None = node
-		for _ in range(max_height + 1):
-			if current is None:
-				break
-			# Check the current node itself
-			if self.is_file_input(current):
-				return current
-			# Check all descendants of the current node
-			result = _find_in_descendants(current, max_descendant_depth)
-			if result:
-				return result
-			# Check all siblings and their descendants
-			if current.parent_node:
-				for sibling in current.parent_node.children_nodes or []:
-					if sibling is current:
-						continue
-					if self.is_file_input(sibling):
-						return sibling
-					result = _find_in_descendants(sibling, max_descendant_depth)
-					if result:
-						return result
-			current = current.parent_node
-		return None
-
-	async def get_selector_map(self) -> dict[int, EnhancedDOMTreeNode]:
-		"""Get the current selector map from cached state or DOM watchdog.
-
-		Returns:
-			Dictionary mapping element indices to EnhancedDOMTreeNode objects
-		"""
-		# First try cached selector map
-		if self._cached_selector_map:
-			return self._cached_selector_map
-
-		# Try to get from DOM watchdog
-		if self._dom_watchdog and hasattr(self._dom_watchdog, 'selector_map'):
-			return self._dom_watchdog.selector_map or {}
-
-		# Return empty dict if nothing available
-		return {}
-
-	async def get_index_by_id(self, element_id: str) -> int | None:
-		"""Find element index by its id attribute.
-
-		Args:
-			element_id: The id attribute value to search for
-
-		Returns:
-			Index of the element, or None if not found
-		"""
-		selector_map = await self.get_selector_map()
-		for idx, element in selector_map.items():
-			if element.attributes and element.attributes.get('id') == element_id:
-				return idx
-		return None
-
-	async def get_index_by_class(self, class_name: str) -> int | None:
-		"""Find element index by its class attribute (matches if class contains the given name).
-
-		Args:
-			class_name: The class name to search for
-
-		Returns:
-			Index of the first matching element, or None if not found
-		"""
-		selector_map = await self.get_selector_map()
-		for idx, element in selector_map.items():
-			if element.attributes:
-				element_class = element.attributes.get('class', '')
-				if class_name in element_class.split():
-					return idx
-		return None
-
-	async def remove_highlights(self) -> None:
-		"""Remove highlights from the page using CDP."""
-		if not self.browser_profile.highlight_elements and not self.browser_profile.dom_highlight_elements:
-			return
-
-		try:
-			async with asyncio.timeout(3.0):
-				# Get cached session
-				cdp_session = await self.get_or_create_cdp_session()
-
-				# Remove highlights via JavaScript - be thorough
-				script = """
-				(function() {
-					// Remove all browser-use highlight elements
-					const highlights = document.querySelectorAll('[data-browser-use-highlight]');
-					console.log('Removing', highlights.length, 'browser-use highlight elements');
-					highlights.forEach(el => el.remove());
-
-					// Also remove by ID in case selector missed anything
-					const highlightContainer = document.getElementById('browser-use-debug-highlights');
-					if (highlightContainer) {
-						console.log('Removing highlight container by ID');
-						highlightContainer.remove();
-					}
-
-					// Final cleanup - remove any orphaned tooltips
-					const orphanedTooltips = document.querySelectorAll('[data-browser-use-highlight="tooltip"]');
-					orphanedTooltips.forEach(el => el.remove());
-
-					return { removed: highlights.length };
-				})();
-				"""
-				result = await cdp_session.cdp_client.send.Runtime.evaluate(
-					params={'expression': script, 'returnByValue': True}, session_id=cdp_session.session_id
-				)
-
-				# Log the result for debugging
-				if result and 'result' in result and 'value' in result['result']:
-					removed_count = result['result']['value'].get('removed', 0)
-					self.logger.debug(f'Successfully removed {removed_count} highlight elements')
-				else:
-					self.logger.debug('Highlight removal completed')
-
-		except Exception as e:
-			self.logger.warning(f'Failed to remove highlights: {e}')
-
-	async def get_element_coordinates(self, backend_node_id: int, cdp_session: CDPSession) -> DOMRect | None:
-		"""Get element coordinates for a backend node ID using multiple methods.
-
-		This method tries DOM.getContentQuads first, then falls back to DOM.getBoxModel,
-		and finally uses JavaScript getBoundingClientRect as a last resort.
-
-		Args:
-			backend_node_id: The backend node ID to get coordinates for
-			cdp_session: The CDP session to use
-
-		Returns:
-			DOMRect with coordinates or None if element not found/no bounds
-		"""
-		session_id = cdp_session.session_id
-		quads = []
-
-		# Method 1: Try DOM.getContentQuads first (best for inline elements and complex layouts)
-		try:
-			content_quads_result = await cdp_session.cdp_client.send.DOM.getContentQuads(
-				params={'backendNodeId': backend_node_id}, session_id=session_id
-			)
-			if 'quads' in content_quads_result and content_quads_result['quads']:
-				quads = content_quads_result['quads']
-				self.logger.debug(f'Got {len(quads)} quads from DOM.getContentQuads')
-			else:
-				self.logger.debug(f'No quads found from DOM.getContentQuads {content_quads_result}')
-		except Exception as e:
-			self.logger.debug(f'DOM.getContentQuads failed: {e}')
-
-		# Method 2: Fall back to DOM.getBoxModel
-		if not quads:
-			try:
-				box_model = await cdp_session.cdp_client.send.DOM.getBoxModel(
-					params={'backendNodeId': backend_node_id}, session_id=session_id
-				)
-				if 'model' in box_model and 'content' in box_model['model']:
-					content_quad = box_model['model']['content']
-					if len(content_quad) >= 8:
-						# Convert box model format to quad format
-						quads = [
-							[
-								content_quad[0],
-								content_quad[1],  # x1, y1
-								content_quad[2],
-								content_quad[3],  # x2, y2
-								content_quad[4],
-								content_quad[5],  # x3, y3
-								content_quad[6],
-								content_quad[7],  # x4, y4
-							]
-						]
-						self.logger.debug('Got quad from DOM.getBoxModel')
-			except Exception as e:
-				self.logger.debug(f'DOM.getBoxModel failed: {e}')
-
-		# Method 3: Fall back to JavaScript getBoundingClientRect
-		if not quads:
-			try:
-				result = await cdp_session.cdp_client.send.DOM.resolveNode(
-					params={'backendNodeId': backend_node_id},
-					session_id=session_id,
-				)
-				if 'object' in result and 'objectId' in result['object']:
-					object_id = result['object']['objectId']
-					js_result = await cdp_session.cdp_client.send.Runtime.callFunctionOn(
-						params={
-							'objectId': object_id,
-							'functionDeclaration': """
-							function() {
-								const rect = this.getBoundingClientRect();
-								return {
-									x: rect.x,
-									y: rect.y,
-									width: rect.width,
-									height: rect.height
-								};
-							}
-							""",
-							'returnByValue': True,
-						},
-						session_id=session_id,
-					)
-					if 'result' in js_result and 'value' in js_result['result']:
-						rect_data = js_result['result']['value']
-						if rect_data['width'] > 0 and rect_data['height'] > 0:
-							return DOMRect(
-								x=rect_data['x'], y=rect_data['y'], width=rect_data['width'], height=rect_data['height']
-							)
-			except Exception as e:
-				self.logger.debug(f'JavaScript getBoundingClientRect failed: {e}')
-
-		# Convert quads to bounding rectangle if we have them
-		if quads:
-			# Use the first quad (most relevant for the element)
-			quad = quads[0]
-			if len(quad) >= 8:
-				# Calculate bounding rect from quad points
-				x_coords = [quad[i] for i in range(0, 8, 2)]
-				y_coords = [quad[i] for i in range(1, 8, 2)]
-
-				min_x = min(x_coords)
-				min_y = min(y_coords)
-				max_x = max(x_coords)
-				max_y = max(y_coords)
-
-				width = max_x - min_x
-				height = max_y - min_y
-
-				if width > 0 and height > 0:
-					return DOMRect(x=min_x, y=min_y, width=width, height=height)
-
-		return None
-
-	async def highlight_interaction_element(self, node: 'EnhancedDOMTreeNode') -> None:
-		"""Temporarily highlight an element during interaction for user visibility.
-
-		This creates a visual highlight on the browser that shows the user which element
-		is being interacted with. The highlight automatically fades after the configured duration.
-
-		Args:
-			node: The DOM node to highlight with backend_node_id for coordinate lookup
-		"""
-		if not self.browser_profile.highlight_elements:
-			return
-
-		try:
-			import json
-
-			cdp_session = await self.cdp_client_for_node(node)
-
-			# Get current coordinates
-			rect = await self.get_element_coordinates(node.backend_node_id, cdp_session)
-
-			color = self.browser_profile.interaction_highlight_color
-			duration_ms = int(self.browser_profile.interaction_highlight_duration * 1000)
-
-			if not rect:
-				self.logger.debug(f'No coordinates found for backend node {node.backend_node_id}')
-				return
-
-			# Create animated corner brackets that start offset and animate inward
-			script = f"""
-			(function() {{
-				const rect = {json.dumps({'x': rect.x, 'y': rect.y, 'width': rect.width, 'height': rect.height})};
-				const color = {json.dumps(color)};
-				const duration = {duration_ms};
-
-				// Scale corner size based on element dimensions to ensure gaps between corners
-				const maxCornerSize = 20;
-				const minCornerSize = 8;
-				const cornerSize = Math.max(
-					minCornerSize,
-					Math.min(maxCornerSize, Math.min(rect.width, rect.height) * 0.35)
-				);
-				const borderWidth = 3;
-				const startOffset = 10; // Starting offset in pixels
-				const finalOffset = -3; // Final position slightly outside the element
-
-				// Get current scroll position
-				const scrollX = window.pageXOffset || document.documentElement.scrollLeft || 0;
-				const scrollY = window.pageYOffset || document.documentElement.scrollTop || 0;
-
-				// Create container for all corners
-				const container = document.createElement('div');
-				container.setAttribute('data-browser-use-interaction-highlight', 'true');
-				container.style.cssText = `
-					position: absolute;
-					left: ${{rect.x + scrollX}}px;
-					top: ${{rect.y + scrollY}}px;
-					width: ${{rect.width}}px;
-					height: ${{rect.height}}px;
-					pointer-events: none;
-					z-index: 2147483647;
-				`;
-
-				// Create 4 corner brackets
-				const corners = [
-					{{ pos: 'top-left', startX: -startOffset, startY: -startOffset, finalX: finalOffset, finalY: finalOffset }},
-					{{ pos: 'top-right', startX: startOffset, startY: -startOffset, finalX: -finalOffset, finalY: finalOffset }},
-					{{ pos: 'bottom-left', startX: -startOffset, startY: startOffset, finalX: finalOffset, finalY: -finalOffset }},
-					{{ pos: 'bottom-right', startX: startOffset, startY: startOffset, finalX: -finalOffset, finalY: -finalOffset }}
-				];
-
-				corners.forEach(corner => {{
-					const bracket = document.createElement('div');
-					bracket.style.cssText = `
-						position: absolute;
-						width: ${{cornerSize}}px;
-						height: ${{cornerSize}}px;
-						pointer-events: none;
-						transition: all 0.15s ease-out;
-					`;
-
-					// Position corners
-					if (corner.pos === 'top-left') {{
-						bracket.style.top = '0';
-						bracket.style.left = '0';
-						bracket.style.borderTop = `${{borderWidth}}px solid ${{color}}`;
-						bracket.style.borderLeft = `${{borderWidth}}px solid ${{color}}`;
-						bracket.style.transform = `translate(${{corner.startX}}px, ${{corner.startY}}px)`;
-					}} else if (corner.pos === 'top-right') {{
-						bracket.style.top = '0';
-						bracket.style.right = '0';
-						bracket.style.borderTop = `${{borderWidth}}px solid ${{color}}`;
-						bracket.style.borderRight = `${{borderWidth}}px solid ${{color}}`;
-						bracket.style.transform = `translate(${{corner.startX}}px, ${{corner.startY}}px)`;
-					}} else if (corner.pos === 'bottom-left') {{
-						bracket.style.bottom = '0';
-						bracket.style.left = '0';
-						bracket.style.borderBottom = `${{borderWidth}}px solid ${{color}}`;
-						bracket.style.borderLeft = `${{borderWidth}}px solid ${{color}}`;
-						bracket.style.transform = `translate(${{corner.startX}}px, ${{corner.startY}}px)`;
-					}} else if (corner.pos === 'bottom-right') {{
-						bracket.style.bottom = '0';
-						bracket.style.right = '0';
-						bracket.style.borderBottom = `${{borderWidth}}px solid ${{color}}`;
-						bracket.style.borderRight = `${{borderWidth}}px solid ${{color}}`;
-						bracket.style.transform = `translate(${{corner.startX}}px, ${{corner.startY}}px)`;
-					}}
-
-					container.appendChild(bracket);
-
-					// Animate to final position slightly outside the element
-					setTimeout(() => {{
-						bracket.style.transform = `translate(${{corner.finalX}}px, ${{corner.finalY}}px)`;
-					}}, 10);
-				}});
-
-				document.body.appendChild(container);
-
-				// Auto-remove after duration
-				setTimeout(() => {{
-					container.style.opacity = '0';
-					container.style.transition = 'opacity 0.3s ease-out';
-					setTimeout(() => container.remove(), 300);
-				}}, duration);
-
-				return {{ created: true }};
-			}})();
-			"""
-
-			# Fire and forget - don't wait for completion
-
-			await cdp_session.cdp_client.send.Runtime.evaluate(
-				params={'expression': script, 'returnByValue': True}, session_id=cdp_session.session_id
-			)
-
-		except Exception as e:
-			# Don't fail the action if highlighting fails
-			self.logger.debug(f'Failed to highlight interaction element: {e}')
-
-	async def highlight_coordinate_click(self, x: int, y: int) -> None:
-		"""Temporarily highlight a coordinate click position for user visibility.
-
-		This creates a visual highlight at the specified coordinates showing where
-		the click action occurred. The highlight automatically fades after the configured duration.
-
-		Args:
-			x: Horizontal coordinate relative to viewport left edge
-			y: Vertical coordinate relative to viewport top edge
-		"""
-		if not self.browser_profile.highlight_elements:
-			return
-
-		try:
-			import json
-
-			cdp_session = await self.get_or_create_cdp_session()
-
-			color = self.browser_profile.interaction_highlight_color
-			duration_ms = int(self.browser_profile.interaction_highlight_duration * 1000)
-
-			# Create animated crosshair and circle at the click coordinates
-			script = f"""
-			(function() {{
-				const x = {x};
-				const y = {y};
-				const color = {json.dumps(color)};
-				const duration = {duration_ms};
-
-				// Get current scroll position
-				const scrollX = window.pageXOffset || document.documentElement.scrollLeft || 0;
-				const scrollY = window.pageYOffset || document.documentElement.scrollTop || 0;
-
-				// Create container
-				const container = document.createElement('div');
-				container.setAttribute('data-browser-use-coordinate-highlight', 'true');
-				container.style.cssText = `
-					position: absolute;
-					left: ${{x + scrollX}}px;
-					top: ${{y + scrollY}}px;
-					width: 0;
-					height: 0;
-					pointer-events: none;
-					z-index: 2147483647;
-				`;
-
-				// Create outer circle
-				const outerCircle = document.createElement('div');
-				outerCircle.style.cssText = `
-					position: absolute;
-					left: -15px;
-					top: -15px;
-					width: 30px;
-					height: 30px;
-					border: 3px solid ${{color}};
-					border-radius: 50%;
-					opacity: 0;
-					transform: scale(0.3);
-					transition: all 0.2s ease-out;
-				`;
-				container.appendChild(outerCircle);
-
-				// Create center dot
-				const centerDot = document.createElement('div');
-				centerDot.style.cssText = `
-					position: absolute;
-					left: -4px;
-					top: -4px;
-					width: 8px;
-					height: 8px;
-					background: ${{color}};
-					border-radius: 50%;
-					opacity: 0;
-					transform: scale(0);
-					transition: all 0.15s ease-out;
-				`;
-				container.appendChild(centerDot);
-
-				document.body.appendChild(container);
-
-				// Animate in
-				setTimeout(() => {{
-					outerCircle.style.opacity = '0.8';
-					outerCircle.style.transform = 'scale(1)';
-					centerDot.style.opacity = '1';
-					centerDot.style.transform = 'scale(1)';
-				}}, 10);
-
-				// Animate out and remove
-				setTimeout(() => {{
-					outerCircle.style.opacity = '0';
-					outerCircle.style.transform = 'scale(1.5)';
-					centerDot.style.opacity = '0';
-					setTimeout(() => container.remove(), 300);
-				}}, duration);
-
-				return {{ created: true }};
-			}})();
-			"""
-
-			# Fire and forget - don't wait for completion
-			await cdp_session.cdp_client.send.Runtime.evaluate(
-				params={'expression': script, 'returnByValue': True}, session_id=cdp_session.session_id
-			)
-
-		except Exception as e:
-			# Don't fail the action if highlighting fails
-			self.logger.debug(f'Failed to highlight coordinate click: {e}')
-
-	async def add_highlights(self, selector_map: dict[int, 'EnhancedDOMTreeNode']) -> None:
-		"""Add visual highlights to the browser DOM for user visibility."""
-		if not self.browser_profile.dom_highlight_elements or not selector_map:
-			return
-
-		try:
-			import json
-
-			# Convert selector_map to the format expected by the highlighting script
-			elements_data = []
-			for element_index, node in selector_map.items():
-				# Get bounding box using absolute position (includes iframe translations) if available
-				if node.absolute_position:
-					# Use absolute position which includes iframe coordinate translations
-					rect = node.absolute_position
-					bbox = {'x': rect.x, 'y': rect.y, 'width': rect.width, 'height': rect.height}
-
-					# Only include elements with valid bounding boxes
-					if bbox and bbox.get('width', 0) > 0 and bbox.get('height', 0) > 0:
-						element = {
-							'x': bbox['x'],
-							'y': bbox['y'],
-							'width': bbox['width'],
-							'height': bbox['height'],
-							'element_name': node.node_name,
-							'is_clickable': node.snapshot_node.is_clickable if node.snapshot_node else True,
-							'is_scrollable': getattr(node, 'is_scrollable', False),
-							'attributes': node.attributes or {},
-							'frame_id': getattr(node, 'frame_id', None),
-							'node_id': node.node_id,
-							'backend_node_id': node.backend_node_id,
-							'element_index': element_index,
-							'xpath': node.xpath,
-							'text_content': node.get_all_children_text()[:50]
-							if hasattr(node, 'get_all_children_text')
-							else node.node_value[:50],
-						}
-						elements_data.append(element)
-
-			if not elements_data:
-				self.logger.debug('⚠️ No valid elements to highlight')
-				return
-
-			self.logger.debug(f'📍 Creating highlights for {len(elements_data)} elements')
-
-			# Always remove existing highlights first
-			await self.remove_highlights()
-
-			# Add a small delay to ensure removal completes
-			import asyncio
-
-			await asyncio.sleep(0.05)
-
-			# Get CDP session
-			cdp_session = await self.get_or_create_cdp_session()
-
-			# Create the proven highlighting script from v0.6.0 with fixed positioning
-			script = f"""
-			(function() {{
-				// Interactive elements data
-				const interactiveElements = {json.dumps(elements_data)};
-
-				console.log('=== BROWSER-USE HIGHLIGHTING ===');
-				console.log('Highlighting', interactiveElements.length, 'interactive elements');
-
-				// Double-check: Remove any existing highlight container first
-				const existingContainer = document.getElementById('browser-use-debug-highlights');
-				if (existingContainer) {{
-					console.log('⚠️ Found existing highlight container, removing it first');
-					existingContainer.remove();
-				}}
-
-				// Also remove any stray highlight elements
-				const strayHighlights = document.querySelectorAll('[data-browser-use-highlight]');
-				if (strayHighlights.length > 0) {{
-					console.log('⚠️ Found', strayHighlights.length, 'stray highlight elements, removing them');
-					strayHighlights.forEach(el => el.remove());
-				}}
-
-				// Use maximum z-index for visibility
-				const HIGHLIGHT_Z_INDEX = 2147483647;
-
-				// Create container for all highlights - use FIXED positioning (key insight from v0.6.0)
-				const container = document.createElement('div');
-				container.id = 'browser-use-debug-highlights';
-				container.setAttribute('data-browser-use-highlight', 'container');
-
-				container.style.cssText = `
-					position: absolute;
-					top: 0;
-					left: 0;
-					width: 100vw;
-					height: 100vh;
-					pointer-events: none;
-					z-index: ${{HIGHLIGHT_Z_INDEX}};
-					overflow: visible;
-					margin: 0;
-					padding: 0;
-					border: none;
-					outline: none;
-					box-shadow: none;
-					background: none;
-					font-family: inherit;
-				`;
-
-				// Helper function to create text elements safely
-				function createTextElement(tag, text, styles) {{
-					const element = document.createElement(tag);
-					element.textContent = text;
-					if (styles) element.style.cssText = styles;
-					return element;
-				}}
-
-				// Add highlights for each element
-				interactiveElements.forEach((element, index) => {{
-					const highlight = document.createElement('div');
-					highlight.setAttribute('data-browser-use-highlight', 'element');
-					highlight.setAttribute('data-element-id', element.element_index);
-					highlight.style.cssText = `
-						position: absolute;
-						left: ${{element.x}}px;
-						top: ${{element.y}}px;
-						width: ${{element.width}}px;
-						height: ${{element.height}}px;
-						outline: 2px dashed #4a90e2;
-						outline-offset: -2px;
-						background: transparent;
-						pointer-events: none;
-						box-sizing: content-box;
-						transition: outline 0.2s ease;
-						margin: 0;
-						padding: 0;
-						border: none;
-					`;
-
-					// Label with the same selector index shown to the model
-					const label = createTextElement('div', element.element_index, `
-						position: absolute;
-						top: -20px;
-						left: 0;
-						background-color: #4a90e2;
-						color: white;
-						padding: 2px 6px;
-						font-size: 11px;
-						font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-						font-weight: bold;
-						border-radius: 3px;
-						white-space: nowrap;
-						z-index: ${{HIGHLIGHT_Z_INDEX + 1}};
-						box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-						border: none;
-						outline: none;
-						margin: 0;
-						line-height: 1.2;
-					`);
-
-					highlight.appendChild(label);
-					container.appendChild(highlight);
-				}});
-
-				// Add container to document
-				document.body.appendChild(container);
-
-				console.log('Highlighting complete - added', interactiveElements.length, 'highlights');
-				return {{ added: interactiveElements.length }};
-			}})();
-			"""
-
-			# Execute the script
-			result = await cdp_session.cdp_client.send.Runtime.evaluate(
-				params={'expression': script, 'returnByValue': True}, session_id=cdp_session.session_id
-			)
-
-			# Log the result
-			if result and 'result' in result and 'value' in result['result']:
-				added_count = result['result']['value'].get('added', 0)
-				self.logger.debug(f'Successfully added {added_count} highlight elements to browser DOM')
-			else:
-				self.logger.debug('Browser highlight injection completed')
-
-		except Exception as e:
-			self.logger.warning(f'Failed to add browser highlights: {e}')
-			import traceback
-
-			self.logger.debug(f'Browser highlight traceback: {traceback.format_exc()}')
 
 	async def _close_extension_options_pages(self) -> None:
 		"""Close any extension options/welcome pages that have opened."""
@@ -3384,51 +2237,6 @@ class BrowserSession(BaseModel):
 
 	# region - ========== CDP-based replacements for browser_context operations ==========
 
-	async def _cdp_get_all_pages(
-		self,
-		include_http: bool = True,
-		include_about: bool = True,
-		include_pages: bool = True,
-		include_iframes: bool = False,
-		include_workers: bool = False,
-		include_chrome: bool = False,
-		include_chrome_extensions: bool = False,
-		include_chrome_error: bool = False,
-	) -> list[TargetInfo]:
-		"""Get all browser pages/tabs using SessionManager (source of truth)."""
-		# Safety check - return empty list if browser not connected yet
-		if not self.session_manager:
-			return []
-
-		# Build TargetInfo dicts from SessionManager owned data (crystal clear ownership)
-		result = []
-		for target_id, target in self.session_manager.get_all_targets().items():
-			# Create TargetInfo dict
-			target_info: TargetInfo = {
-				'targetId': target.target_id,
-				'type': target.target_type,
-				'title': target.title,
-				'url': target.url,
-				'attached': True,
-				'canAccessOpener': False,
-			}
-
-			# Apply filters
-			if self._is_valid_target(
-				target_info,
-				include_http=include_http,
-				include_about=include_about,
-				include_pages=include_pages,
-				include_iframes=include_iframes,
-				include_workers=include_workers,
-				include_chrome=include_chrome,
-				include_chrome_extensions=include_chrome_extensions,
-				include_chrome_error=include_chrome_error,
-			):
-				result.append(target_info)
-
-		return result
-
 	async def _cdp_create_new_page(self, url: str = 'about:blank', background: bool = False, new_window: bool = False) -> str:
 		"""Create a new page/tab using CDP Target.createTarget. Returns target ID."""
 		# Only include newWindow when True, letting Chrome auto-create window as needed
@@ -3471,15 +2279,6 @@ class BrowserSession(BaseModel):
 		"""Clear all cookies using CDP Network.clearBrowserCookies."""
 		cdp_session = await self.get_or_create_cdp_session()
 		await cdp_session.cdp_client.send.Storage.clearCookies(session_id=cdp_session.session_id)
-
-	async def _cdp_grant_permissions(self, permissions: list[str], origin: str | None = None) -> None:
-		"""Grant permissions using CDP Browser.grantPermissions."""
-		params = {'permissions': permissions}
-		# if origin:
-		# 	params['origin'] = origin
-		cdp_session = await self.get_or_create_cdp_session()
-		# await cdp_session.cdp_client.send.Browser.grantPermissions(params=params, session_id=cdp_session.session_id)
-		raise NotImplementedError('Not implemented yet')
 
 	async def _cdp_set_geolocation(self, latitude: float, longitude: float, accuracy: float = 100) -> None:
 		"""Set geolocation using CDP Emulation.setGeolocationOverride."""
@@ -3640,363 +2439,6 @@ class BrowserSession(BaseModel):
 		# Use helper to navigate on the target
 		await cdp_session.cdp_client.send.Page.navigate(params={'url': url}, session_id=cdp_session.session_id)
 
-	@staticmethod
-	def _is_valid_target(
-		target_info: TargetInfo,
-		include_http: bool = True,
-		include_chrome: bool = False,
-		include_chrome_extensions: bool = False,
-		include_chrome_error: bool = False,
-		include_about: bool = True,
-		include_iframes: bool = True,
-		include_pages: bool = True,
-		include_workers: bool = False,
-	) -> bool:
-		"""Check if a target should be processed.
-
-		Args:
-			target_info: Target info dict from CDP
-
-		Returns:
-			True if target should be processed, False if it should be skipped
-		"""
-		target_type = target_info.get('type', '')
-		url = target_info.get('url', '')
-
-		url_allowed, type_allowed = False, False
-
-		# Always allow new tab pages (chrome://new-tab-page/, chrome://newtab/, about:blank)
-		# so they can be redirected to about:blank in connect()
-		from browser_use.security import is_new_tab_page
-
-		if is_new_tab_page(url):
-			url_allowed = True
-
-		if url.startswith('chrome-error://') and include_chrome_error:
-			url_allowed = True
-
-		if url.startswith('chrome://') and include_chrome:
-			url_allowed = True
-
-		if url.startswith('chrome-extension://') and include_chrome_extensions:
-			url_allowed = True
-
-		# dont allow about:srcdoc! there are also other rare about: pages that we want to avoid
-		if url == 'about:blank' and include_about:
-			url_allowed = True
-
-		if (url.startswith('http://') or url.startswith('https://')) and include_http:
-			url_allowed = True
-
-		if target_type in ('service_worker', 'shared_worker', 'worker') and include_workers:
-			type_allowed = True
-
-		if target_type in ('page', 'tab') and include_pages:
-			type_allowed = True
-
-		if target_type in ('iframe', 'webview') and include_iframes:
-			type_allowed = True
-			# Chrome often reports empty URLs for cross-origin iframe targets (OOPIFs)
-			# initially via attachedToTarget, but they are still valid and accessible via CDP.
-			# Allow them through so get_all_frames() can resolve their frame trees.
-			if not url:
-				url_allowed = True
-
-		return url_allowed and type_allowed
-
-	async def get_all_frames(self) -> tuple[dict[str, dict], dict[str, str]]:
-		"""Get a complete frame hierarchy from all browser targets.
-
-		Returns:
-			Tuple of (all_frames, target_sessions) where:
-			- all_frames: dict mapping frame_id -> frame info dict with all metadata
-			- target_sessions: dict mapping target_id -> session_id for active sessions
-		"""
-		all_frames = {}  # frame_id -> FrameInfo dict
-		target_sessions = {}  # target_id -> session_id (keep sessions alive during collection)
-
-		# Check if cross-origin iframe support is enabled
-		include_cross_origin = self.browser_profile.cross_origin_iframes
-
-		# Get all targets - only include iframes if cross-origin support is enabled
-		targets = await self._cdp_get_all_pages(
-			include_http=True,
-			include_about=True,
-			include_pages=True,
-			include_iframes=include_cross_origin,  # Only include iframe targets if flag is set
-			include_workers=False,
-			include_chrome=False,
-			include_chrome_extensions=False,
-			include_chrome_error=include_cross_origin,  # Only include error pages if cross-origin is enabled
-		)
-		all_targets = targets
-
-		# First pass: collect frame trees from ALL targets
-		for target in all_targets:
-			target_id = target['targetId']
-
-			# Skip iframe targets if cross-origin support is disabled
-			if not include_cross_origin and target.get('type') == 'iframe':
-				continue
-
-			# When cross-origin support is disabled, only process the current target
-			if not include_cross_origin:
-				# Only process the current focus target
-				if self.agent_focus_target_id and target_id != self.agent_focus_target_id:
-					continue
-				# Use the existing agent_focus target's session - use safe API with focus=False
-				try:
-					cdp_session = await self.get_or_create_cdp_session(self.agent_focus_target_id, focus=False)
-				except ValueError:
-					continue  # Skip if no session available
-			else:
-				# Get cached session for this target (don't change focus - iterating frames)
-				try:
-					cdp_session = await self.get_or_create_cdp_session(target_id, focus=False)
-				except ValueError:
-					continue  # Target may have detached between discovery and session creation
-
-			if cdp_session:
-				target_sessions[target_id] = cdp_session.session_id
-
-				try:
-					# Try to get frame tree (not all target types support this)
-					frame_tree_result = await cdp_session.cdp_client.send.Page.getFrameTree(session_id=cdp_session.session_id)
-
-					# Process the frame tree recursively
-					def process_frame_tree(node, parent_frame_id=None):
-						"""Recursively process frame tree and add to all_frames."""
-						frame = node.get('frame', {})
-						current_frame_id = frame.get('id')
-
-						if current_frame_id:
-							# For iframe targets, check if the frame has a parentId field
-							# This indicates it's an OOPIF with a parent in another target
-							actual_parent_id = frame.get('parentId') or parent_frame_id
-
-							# Create frame info with all CDP response data plus our additions
-							frame_info = {
-								**frame,  # Include all original frame data: id, url, parentId, etc.
-								'frameTargetId': target_id,  # Target that can access this frame
-								'parentFrameId': actual_parent_id,  # Use parentId from frame if available
-								'childFrameIds': [],  # Will be populated below
-								'isCrossOrigin': False,  # Will be determined based on context
-								'isValidTarget': self._is_valid_target(
-									target,
-									include_http=True,
-									include_about=True,
-									include_pages=True,
-									include_iframes=True,
-									include_workers=False,
-									include_chrome=False,  # chrome://newtab, chrome://settings, etc. are not valid frames we can control (for sanity reasons)
-									include_chrome_extensions=False,  # chrome-extension://
-									include_chrome_error=False,  # chrome-error://  (e.g. when iframes fail to load or are blocked by uBlock Origin)
-								),
-							}
-
-							# Check if frame is cross-origin based on crossOriginIsolatedContextType
-							cross_origin_type = frame.get('crossOriginIsolatedContextType')
-							if cross_origin_type and cross_origin_type != 'NotIsolated':
-								frame_info['isCrossOrigin'] = True
-
-							# For iframe targets, the frame itself is likely cross-origin
-							if target.get('type') == 'iframe':
-								frame_info['isCrossOrigin'] = True
-
-							# Skip cross-origin frames if support is disabled
-							if not include_cross_origin and frame_info.get('isCrossOrigin'):
-								return  # Skip this frame and its children
-
-							# Add child frame IDs (note: OOPIFs won't appear here)
-							child_frames = node.get('childFrames', [])
-							for child in child_frames:
-								child_frame = child.get('frame', {})
-								child_frame_id = child_frame.get('id')
-								if child_frame_id:
-									frame_info['childFrameIds'].append(child_frame_id)
-
-							# Store or merge frame info
-							if current_frame_id in all_frames:
-								# Frame already seen from another target, merge info
-								existing = all_frames[current_frame_id]
-								# If this is an iframe target, it has direct access to the frame
-								if target.get('type') == 'iframe':
-									existing['frameTargetId'] = target_id
-									existing['isCrossOrigin'] = True
-							else:
-								all_frames[current_frame_id] = frame_info
-
-							# Process child frames recursively (only if we're not skipping this frame)
-							if include_cross_origin or not frame_info.get('isCrossOrigin'):
-								for child in child_frames:
-									process_frame_tree(child, current_frame_id)
-
-					# Process the entire frame tree
-					process_frame_tree(frame_tree_result.get('frameTree', {}))
-
-				except Exception as e:
-					# Target doesn't support Page domain or has no frames
-					self.logger.debug(f'Failed to get frame tree for target {target_id}: {e}')
-
-		# Second pass: populate backend node IDs and parent target IDs
-		# Only do this if cross-origin support is enabled
-		if include_cross_origin:
-			await self._populate_frame_metadata(all_frames, target_sessions)
-
-		return all_frames, target_sessions
-
-	async def _populate_frame_metadata(self, all_frames: dict[str, dict], target_sessions: dict[str, str]) -> None:
-		"""Populate additional frame metadata like backend node IDs and parent target IDs.
-
-		Args:
-			all_frames: Frame hierarchy dict to populate
-			target_sessions: Active target sessions
-		"""
-		for frame_id_iter, frame_info in all_frames.items():
-			parent_frame_id = frame_info.get('parentFrameId')
-
-			if parent_frame_id and parent_frame_id in all_frames:
-				parent_frame_info = all_frames[parent_frame_id]
-				parent_target_id = parent_frame_info.get('frameTargetId')
-
-				# Store parent target ID
-				frame_info['parentTargetId'] = parent_target_id
-
-				# Try to get backend node ID from parent context
-				if parent_target_id in target_sessions:
-					assert parent_target_id is not None
-					parent_session_id = target_sessions[parent_target_id]
-					try:
-						# Enable DOM domain
-						await self.cdp_client.send.DOM.enable(session_id=parent_session_id)
-
-						# Get frame owner info to find backend node ID
-						frame_owner = await self.cdp_client.send.DOM.getFrameOwner(
-							params={'frameId': frame_id_iter}, session_id=parent_session_id
-						)
-
-						if frame_owner:
-							frame_info['backendNodeId'] = frame_owner.get('backendNodeId')
-							frame_info['nodeId'] = frame_owner.get('nodeId')
-
-					except Exception:
-						# Frame owner not available (likely cross-origin)
-						pass
-
-	async def find_frame_target(self, frame_id: str, all_frames: dict[str, dict] | None = None) -> dict | None:
-		"""Find the frame info for a specific frame ID.
-
-		Args:
-			frame_id: The frame ID to search for
-			all_frames: Optional pre-built frame hierarchy. If None, will call get_all_frames()
-
-		Returns:
-			Frame info dict if found, None otherwise
-		"""
-		if all_frames is None:
-			all_frames, _ = await self.get_all_frames()
-
-		return all_frames.get(frame_id)
-
-	async def cdp_client_for_target(self, target_id: TargetID) -> CDPSession:
-		return await self.get_or_create_cdp_session(target_id, focus=False)
-
-	async def cdp_client_for_frame(self, frame_id: str) -> CDPSession:
-		"""Get a CDP client attached to the target containing the specified frame.
-
-		Builds a unified frame hierarchy from all targets to find the correct target
-		for any frame, including OOPIFs (Out-of-Process iframes).
-
-		Args:
-			frame_id: The frame ID to search for
-
-		Returns:
-			Tuple of (cdp_cdp_session, target_id) for the target containing the frame
-
-		Raises:
-			ValueError: If the frame is not found in any target
-		"""
-		# If cross-origin iframes are disabled, just use the main session
-		if not self.browser_profile.cross_origin_iframes:
-			return await self.get_or_create_cdp_session()
-
-		# Get complete frame hierarchy
-		all_frames, target_sessions = await self.get_all_frames()
-
-		# Find the requested frame
-		frame_info = await self.find_frame_target(frame_id, all_frames)
-
-		if frame_info:
-			target_id = frame_info.get('frameTargetId')
-
-			if target_id in target_sessions:
-				assert target_id is not None
-				# Use existing session
-				session_id = target_sessions[target_id]
-				# Return the client with session attached (don't change focus)
-				return await self.get_or_create_cdp_session(target_id, focus=False)
-
-		# Frame not found
-		raise ValueError(f"Frame with ID '{frame_id}' not found in any target")
-
-	async def cdp_client_for_node(self, node: EnhancedDOMTreeNode) -> CDPSession:
-		"""Get CDP client for a specific DOM node based on its frame.
-
-		IMPORTANT: backend_node_id is only valid in the session where the DOM was captured.
-		We trust the node's session_id/frame_id/target_id instead of searching all sessions.
-		"""
-
-		# Strategy 1: If node has session_id, try to use that exact session (most specific)
-		if node.session_id and self.session_manager:
-			try:
-				# Find the CDP session by session_id from SessionManager
-				cdp_session = self.session_manager.get_session(node.session_id)
-				if cdp_session:
-					# Get target to log URL
-					target = self.session_manager.get_target(cdp_session.target_id)
-					self.logger.debug(f'✅ Using session from node.session_id for node {node.backend_node_id}: {target.url}')
-					return cdp_session
-			except Exception as e:
-				self.logger.debug(f'Failed to get session by session_id {node.session_id}: {e}')
-
-		# Strategy 2: If node has frame_id, use that frame's session
-		if node.frame_id:
-			try:
-				cdp_session = await self.cdp_client_for_frame(node.frame_id)
-				target = self.session_manager.get_target(cdp_session.target_id)
-				self.logger.debug(f'✅ Using session from node.frame_id for node {node.backend_node_id}: {target.url}')
-				return cdp_session
-			except Exception as e:
-				self.logger.debug(f'Failed to get session for frame {node.frame_id}: {e}')
-
-		# Strategy 3: If node has target_id, use that target's session
-		if node.target_id:
-			try:
-				cdp_session = await self.get_or_create_cdp_session(target_id=node.target_id, focus=False)
-				target = self.session_manager.get_target(cdp_session.target_id)
-				self.logger.debug(f'✅ Using session from node.target_id for node {node.backend_node_id}: {target.url}')
-				return cdp_session
-			except Exception as e:
-				self.logger.debug(f'Failed to get session for target {node.target_id}: {e}')
-
-		# Strategy 4: Fallback to agent_focus_target_id (the page where agent is currently working)
-		if self.agent_focus_target_id:
-			target = self.session_manager.get_target(self.agent_focus_target_id)
-			try:
-				# Use safe API with focus=False to avoid changing focus
-				cdp_session = await self.get_or_create_cdp_session(self.agent_focus_target_id, focus=False)
-				if target:
-					self.logger.warning(
-						f'⚠️ Node {node.backend_node_id} has no session/frame/target info. Using agent_focus session: {target.url}'
-					)
-				return cdp_session
-			except ValueError:
-				pass  # Fall through to last resort
-
-		# Last resort: use main session
-		self.logger.error(f'❌ No session info for node {node.backend_node_id} and no agent_focus available. Using main session.')
-		return await self.get_or_create_cdp_session()
-
 	async def take_screenshot(
 		self,
 		path: str | None = None,
@@ -4054,67 +2496,3 @@ class BrowserSession(BaseModel):
 			Path(path).write_bytes(screenshot_data)
 
 		return screenshot_data
-
-	async def screenshot_element(
-		self,
-		selector: str,
-		path: str | None = None,
-		format: str = 'png',
-		quality: int | None = None,
-	) -> bytes:
-		"""Take a screenshot of a specific element.
-
-		Args:
-			selector: CSS selector for the element
-			path: Optional file path to save screenshot
-			format: Image format ('png', 'jpeg', 'webp')
-			quality: Quality 0-100 for JPEG format
-
-		Returns:
-			Screenshot data as bytes
-		"""
-
-		bounds = await self._get_element_bounds(selector)
-		if not bounds:
-			raise ValueError(f"Element '{selector}' not found or has no bounds")
-
-		return await self.take_screenshot(
-			path=path,
-			format=format,
-			quality=quality,
-			clip=bounds,
-		)
-
-	async def _get_element_bounds(self, selector: str) -> dict | None:
-		"""Get element bounding box using CDP."""
-
-		cdp_session = await self.get_or_create_cdp_session()
-
-		# Get document
-		doc = await cdp_session.cdp_client.send.DOM.getDocument(params={'depth': 1}, session_id=cdp_session.session_id)
-
-		# Query selector
-		node_result = await cdp_session.cdp_client.send.DOM.querySelector(
-			params={'nodeId': doc['root']['nodeId'], 'selector': selector}, session_id=cdp_session.session_id
-		)
-
-		node_id = node_result.get('nodeId')
-		if not node_id:
-			return None
-
-		# Get bounding box
-		box_result = await cdp_session.cdp_client.send.DOM.getBoxModel(
-			params={'nodeId': node_id}, session_id=cdp_session.session_id
-		)
-
-		box_model = box_result.get('model')
-		if not box_model:
-			return None
-
-		content = box_model['content']
-		return {
-			'x': min(content[0], content[2], content[4], content[6]),
-			'y': min(content[1], content[3], content[5], content[7]),
-			'width': max(content[0], content[2], content[4], content[6]) - min(content[0], content[2], content[4], content[6]),
-			'height': max(content[1], content[3], content[5], content[7]) - min(content[1], content[3], content[5], content[7]),
-		}
