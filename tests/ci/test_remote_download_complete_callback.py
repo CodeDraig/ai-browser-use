@@ -7,7 +7,7 @@ event with ``state == 'completed'`` is the only signal the
 branch used to only dispatch ``FileDownloadedEvent`` on the event bus and never
 invoke the direct callbacks.
 
-``DefaultActionWatchdog._execute_click_with_download_detection`` waits on the
+``ClickActions._execute_click_with_download_detection`` waits on the
 ``on_download_complete`` callback (an ``asyncio.Event``), so without this call
 the click action blocks until ``download_complete_timeout`` (30s by default)
 even though the file already finished downloading. This test drives the

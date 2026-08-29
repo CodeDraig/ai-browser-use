@@ -653,11 +653,21 @@ class TestBrowserSessionEventSystem:
 			BrowserStartEvent,
 			BrowserStateRequestEvent,
 			BrowserStopEvent,
+			ClickCoordinateEvent,
 			ClickElementEvent,
 			CloseTabEvent,
+			GetDropdownOptionsEvent,
+			GoBackEvent,
+			GoForwardEvent,
+			RefreshEvent,
 			ScreenshotEvent,
 			ScrollEvent,
+			ScrollToTextEvent,
+			SelectDropdownOptionEvent,
+			SendKeysEvent,
 			TypeTextEvent,
+			UploadFileEvent,
+			WaitEvent,
 		)
 
 		# These event types should have handlers registered
@@ -675,6 +685,27 @@ class TestBrowserSessionEventSystem:
 		for event_type in event_types_with_handlers:
 			handlers = browser_session.event_bus.handlers.get(event_type.__name__, [])
 			assert len(handlers) > 0, f'No handlers registered for {event_type.__name__}'
+
+		default_action_events = [
+			ClickElementEvent,
+			ClickCoordinateEvent,
+			TypeTextEvent,
+			ScrollEvent,
+			GoBackEvent,
+			GoForwardEvent,
+			RefreshEvent,
+			WaitEvent,
+			SendKeysEvent,
+			UploadFileEvent,
+			ScrollToTextEvent,
+			GetDropdownOptionsEvent,
+			SelectDropdownOptionEvent,
+		]
+		for event_type in default_action_events:
+			handler_names = [
+				getattr(handler, '__name__', '') for handler in browser_session.event_bus.handlers.get(event_type.__name__, [])
+			]
+			assert f'DefaultActionWatchdog.on_{event_type.__name__}' in handler_names
 
 		counts = {event_type: len(handlers) for event_type, handlers in browser_session.event_bus.handlers.items()}
 		await browser_session.watchdogs.attach()
