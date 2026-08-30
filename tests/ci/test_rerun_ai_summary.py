@@ -2,10 +2,11 @@
 
 from unittest.mock import AsyncMock
 
+from browser_use.agent.history import AgentHistory, AgentHistoryList
+from browser_use.agent.results import ActionResult, RerunSummaryAction, StepMetadata
 from browser_use.agent.service import Agent
-from browser_use.agent.views import ActionResult, AgentHistory, AgentHistoryList, RerunSummaryAction, StepMetadata
 from browser_use.browser.views import BrowserStateHistory
-from browser_use.dom.views import DOMRect, NodeType
+from browser_use.dom.tree import DOMRect, NodeType
 from tests.ci.conftest import create_mock_llm
 
 
@@ -338,7 +339,7 @@ async def test_rerun_cleanup_on_failure(httpserver):
 	This test verifies the try/finally cleanup logic by creating a step that will fail
 	(element matching fails) and checking that the browser session is properly closed afterward.
 	"""
-	from browser_use.dom.views import DOMInteractedElement
+	from browser_use.dom.history import DOMInteractedElement
 
 	# Set up a test page with a button that has DIFFERENT attributes than our historical element
 	test_html = """<!DOCTYPE html>
@@ -443,7 +444,7 @@ async def test_rerun_records_errors_when_skip_failures_true(httpserver):
 	and a step failed after all retries, no error result was appended, causing the AI summary
 	to incorrectly report success=True even with multiple failures.
 	"""
-	from browser_use.dom.views import DOMInteractedElement
+	from browser_use.dom.history import DOMInteractedElement
 
 	# Set up a test page with a button that has DIFFERENT attributes than our historical element
 	# This ensures element matching will fail (the historical element won't be found)
@@ -583,7 +584,7 @@ async def test_rerun_skips_redundant_retry_steps(httpserver):
 	When consecutive steps target the same element with the same action, the second step
 	should be skipped as a redundant retry.
 	"""
-	from browser_use.dom.views import DOMInteractedElement
+	from browser_use.dom.history import DOMInteractedElement
 
 	# Set up a test page with a button
 	test_html = """<!DOCTYPE html>
@@ -736,7 +737,7 @@ async def test_rerun_skips_redundant_retry_steps(httpserver):
 
 async def test_is_redundant_retry_step_detection():
 	"""Test the _is_redundant_retry_step method directly."""
-	from browser_use.dom.views import DOMInteractedElement
+	from browser_use.dom.history import DOMInteractedElement
 
 	llm = create_mock_llm(actions=None)
 	agent = Agent(task='Test task', llm=llm)
@@ -845,19 +846,19 @@ async def test_is_redundant_retry_step_detection():
 
 	try:
 		# Test 1: Same element, same action, previous succeeded -> redundant
-		assert agent._history_replay._is_redundant_retry_step(retry_click_step, click_step, True) is True
+		assert agent._history_replay.retry_policy.is_redundant_retry_step(retry_click_step, click_step, True) is True
 
 		# Test 2: Same element, same action, previous FAILED -> NOT redundant
-		assert agent._history_replay._is_redundant_retry_step(retry_click_step, click_step, False) is False
+		assert agent._history_replay.retry_policy.is_redundant_retry_step(retry_click_step, click_step, False) is False
 
 		# Test 3: Same element, different action type -> NOT redundant
-		assert agent._history_replay._is_redundant_retry_step(input_step, click_step, True) is False
+		assert agent._history_replay.retry_policy.is_redundant_retry_step(input_step, click_step, True) is False
 
 		# Test 4: Different element, same action type -> NOT redundant
-		assert agent._history_replay._is_redundant_retry_step(different_element_step, click_step, True) is False
+		assert agent._history_replay.retry_policy.is_redundant_retry_step(different_element_step, click_step, True) is False
 
 		# Test 5: No previous step -> NOT redundant
-		assert agent._history_replay._is_redundant_retry_step(click_step, None, True) is False
+		assert agent._history_replay.retry_policy.is_redundant_retry_step(click_step, None, True) is False
 
 	finally:
 		await agent.close()
@@ -1059,7 +1060,7 @@ async def test_rerun_waits_for_elements_before_matching(httpserver):
 	This test verifies that for actions needing element matching (like click),
 	the rerun logic waits for the page to have enough elements before proceeding.
 	"""
-	from browser_use.dom.views import DOMInteractedElement
+	from browser_use.dom.history import DOMInteractedElement
 
 	# Set up a test page with elements
 	test_html = """<!DOCTYPE html>
@@ -1181,7 +1182,7 @@ async def test_rerun_uses_exponential_backoff_retry_delays(httpserver):
 	"""Test that rerun uses exponential backoff delays between retries (5s, 10s, 20s, capped at 30s)."""
 	import time
 
-	from browser_use.dom.views import DOMInteractedElement
+	from browser_use.dom.history import DOMInteractedElement
 
 	# Set up a test page with a button that won't match
 	test_html = """<!DOCTYPE html>

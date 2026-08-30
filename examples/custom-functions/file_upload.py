@@ -18,8 +18,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from browser_use import ChatOpenAI
+from browser_use.agent.results import ActionResult
 from browser_use.agent.service import Agent, Tools
-from browser_use.agent.views import ActionResult
 from browser_use.browser import BrowserSession
 from browser_use.browser.events import UploadFileEvent
 

@@ -21,8 +21,9 @@ from bubus import EventBus
 from uuid_extensions import uuid7str
 
 from browser_use import Browser, BrowserProfile
-from browser_use.agent.configuration import AgentConfiguration
+from browser_use.agent.construction import AgentConstruction
 from browser_use.agent.execution import AgentExecution
+from browser_use.agent.history import AgentHistory, AgentHistoryList, AgentStructuredOutput
 from browser_use.agent.history_replay import AgentHistoryReplay
 
 # Lazy import for gif to avoid heavy agent.views import at startup
@@ -31,21 +32,14 @@ from browser_use.agent.message_manager.service import (
 	MessageManager,
 )
 from browser_use.agent.model_interaction import AgentModelInteraction
-from browser_use.agent.views import (
-	ActionResult,
-	AgentHistory,
-	AgentHistoryList,
-	AgentOutput,
-	AgentSettings,
-	AgentState,
-	AgentStepInfo,
-	AgentStructuredOutput,
-	BrowserStateHistory,
-	DetectedVariable,
-	MessageCompactionSettings,
-)
+from browser_use.agent.model_settings import AgentModelSettings
+from browser_use.agent.results import ActionResult, AgentOutput
+from browser_use.agent.settings import AgentSettings, MessageCompactionSettings
+from browser_use.agent.state import AgentState, AgentStepInfo
+from browser_use.agent.state_restoration import AgentStateRestoration
+from browser_use.agent.variables import DetectedVariable
 from browser_use.browser.events import _get_timeout
-from browser_use.browser.views import BrowserStateSummary
+from browser_use.browser.views import BrowserStateHistory, BrowserStateSummary
 from browser_use.config import get_environment_config
 from browser_use.logging_utils import log_pretty_path, time_execution_async, time_execution_sync
 from browser_use.runtime import SignalHandler
@@ -152,7 +146,9 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		_url_shortening_limit: int = 25,
 		enable_signal_handler: bool = True,
 	):
-		self._configuration = AgentConfiguration(self)
+		self._model_settings = AgentModelSettings(self)
+		self._construction = AgentConstruction(self)
+		self._state_restoration = AgentStateRestoration(self)
 		self._model_interaction = AgentModelInteraction(self)
 		self._execution = AgentExecution(self)
 		self._history_replay = AgentHistoryReplay(self)
@@ -165,7 +161,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			llm_screenshot_size,
 			llm_timeout,
 			available_file_paths,
-		) = self._configuration.normalize_model_settings(
+		) = self._model_settings.normalize_model_settings(
 			llm,
 			page_extraction_llm,
 			judge_llm,
@@ -180,7 +176,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		self.task_id: str = self.id
 		self.session_id: str = uuid7str()
 
-		self.browser_session = self._configuration.create_browser_session(browser_profile, browser, demo_mode)
+		self.browser_session = self._construction.create_browser_session(browser_profile, browser, demo_mode)
 
 		self._demo_mode_enabled: bool = bool(self.browser_profile.demo_mode) if self.browser_session else False
 		if self._demo_mode_enabled and getattr(self.browser_profile, 'headless', False):
@@ -191,7 +187,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		# Initialize available file paths as direct attribute
 		self.available_file_paths = available_file_paths
 
-		output_model_schema = self._configuration.configure_tools(
+		output_model_schema = self._construction.configure_tools(
 			tools, use_vision, display_files_in_done_text, llm, output_model_schema
 		)
 		self.output_model_schema = output_model_schema
@@ -204,7 +200,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		self.extraction_schema = extraction_schema
 
 		# Core components - task enhancement now has access to output_model_schema from tools
-		self.task = self._configuration._enhance_task_with_schema(task, output_model_schema)
+		self.task = self._construction._enhance_task_with_schema(task, output_model_schema)
 		self.llm = llm
 		self.judge_llm = judge_llm
 
@@ -282,27 +278,27 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		self.agent_directory = base_tmp / f'browser_use_agent_{self.id}_{timestamp}'
 
 		# Initialize file system and screenshot service
-		self._configuration._set_file_system(file_system_path)
-		self._configuration._set_screenshot_service()
+		self._state_restoration._set_file_system(file_system_path)
+		self._state_restoration._set_screenshot_service()
 
 		# Action setup
-		self._configuration._setup_action_models()
-		self._configuration._set_browser_use_version_and_source(source)
+		self._construction._setup_action_models()
+		self._state_restoration._set_browser_use_version_and_source(source)
 
 		initial_url = None
 
 		# only load url if no initial actions are provided
 		if self.directly_open_url and not self.state.follow_up_task and not initial_actions:
-			initial_url = self._configuration._extract_start_url(self.task)
+			initial_url = self._construction._extract_start_url(self.task)
 			if initial_url:
 				self.logger.info(f'🔗 Found URL in task: {initial_url}, adding as initial action...')
 				initial_actions = [{'navigate': {'url': initial_url, 'new_tab': False}}]
 
 		self.initial_url = initial_url
 
-		self.initial_actions = self._configuration._convert_initial_actions(initial_actions) if initial_actions else None
+		self.initial_actions = self._construction._convert_initial_actions(initial_actions) if initial_actions else None
 		# Verify we can connect to the model
-		self._configuration._verify_and_setup_llm()
+		self._model_settings._verify_and_setup_llm()
 
 		# TODO: move this logic to the LLMs
 		# Handle users trying to use use_vision=True with DeepSeek models
@@ -326,7 +322,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		# Store llm_screenshot_size in browser_session so tools can access it
 		self.browser_session.llm_screenshot_size = llm_screenshot_size
 
-		self._message_manager = self._configuration.create_message_manager(
+		self._message_manager = self._construction.create_message_manager(
 			override_system_message,
 			extend_system_message,
 			llm_screenshot_size,

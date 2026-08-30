@@ -187,7 +187,7 @@ class TestActionResultImages:
 
 	def test_action_result_with_images(self):
 		"""Test creating ActionResult with images."""
-		from browser_use.agent.views import ActionResult
+		from browser_use.agent.results import ActionResult
 
 		images = [{'name': 'test.png', 'data': 'base64_encoded_data_here'}]
 
@@ -205,7 +205,7 @@ class TestActionResultImages:
 
 	def test_action_result_without_images(self):
 		"""Test ActionResult without images (default behavior)."""
-		from browser_use.agent.views import ActionResult
+		from browser_use.agent.results import ActionResult
 
 		result = ActionResult(extracted_content='Some text', long_term_memory='Memory')
 
@@ -213,7 +213,7 @@ class TestActionResultImages:
 
 	def test_action_result_with_multiple_images(self):
 		"""Test ActionResult with multiple images."""
-		from browser_use.agent.views import ActionResult
+		from browser_use.agent.results import ActionResult
 
 		images = [
 			{'name': 'image1.png', 'data': 'base64_data_1'},
@@ -234,7 +234,7 @@ class TestActionResultImages:
 
 	def test_action_result_with_empty_images_list(self):
 		"""Test ActionResult with empty images list."""
-		from browser_use.agent.views import ActionResult
+		from browser_use.agent.results import ActionResult
 
 		result = ActionResult(
 			extracted_content='No images',

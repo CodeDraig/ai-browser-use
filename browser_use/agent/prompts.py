@@ -3,13 +3,13 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Literal, Optional
 
 from browser_use.browser.views import PLACEHOLDER_4PX_SCREENSHOT
+from browser_use.dom.tree import NodeType, SimplifiedNode
 from browser_use.dom.utils import sanitize_surrogates
-from browser_use.dom.views import NodeType, SimplifiedNode
 from browser_use.llm.messages import ContentPartImageParam, ContentPartTextParam, ImageURL, SystemMessage, UserMessage
 from browser_use.security import is_new_tab_page
 
 if TYPE_CHECKING:
-	from browser_use.agent.views import AgentStepInfo
+	from browser_use.agent.state import AgentStepInfo
 	from browser_use.browser.views import BrowserStateSummary
 	from browser_use.filesystem.file_system import FileSystem
 

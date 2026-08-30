@@ -25,7 +25,7 @@ from openai import AsyncOpenAI
 from pydantic import BaseModel, Field
 
 from browser_use import Agent, ChatOpenAI, Tools
-from browser_use.agent.views import ActionResult
+from browser_use.agent.results import ActionResult
 from browser_use.browser import BrowserSession
 
 

@@ -11,11 +11,9 @@ from browser_use.browser.events import (
 	TabCreatedEvent,
 )
 from browser_use.browser.watchdog_base import BaseWatchdog
+from browser_use.dom.serialized_state import SerializedDOMState
 from browser_use.dom.service import DomService
-from browser_use.dom.views import (
-	EnhancedDOMTreeNode,
-	SerializedDOMState,
-)
+from browser_use.dom.tree import EnhancedDOMTreeNode
 from browser_use.logging_utils import time_execution_async
 from browser_use.runtime import create_task_with_error_handling
 

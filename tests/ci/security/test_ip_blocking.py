@@ -9,6 +9,7 @@ from bubus import EventBus
 
 from browser_use.browser import BrowserProfile, BrowserSession
 from browser_use.browser.watchdogs.security_watchdog import SecurityWatchdog
+from browser_use.security import is_ip_address
 
 
 class TestIPv4Blocking:
@@ -347,11 +348,11 @@ class TestIsIPAddressHelper:
 		watchdog = SecurityWatchdog(browser_session=browser_session, event_bus=event_bus)
 
 		# Valid IPv4 addresses
-		assert watchdog._is_ip_address('127.0.0.1') is True
-		assert watchdog._is_ip_address('192.168.1.1') is True
-		assert watchdog._is_ip_address('8.8.8.8') is True
-		assert watchdog._is_ip_address('255.255.255.255') is True
-		assert watchdog._is_ip_address('0.0.0.0') is True
+		assert is_ip_address('127.0.0.1') is True
+		assert is_ip_address('192.168.1.1') is True
+		assert is_ip_address('8.8.8.8') is True
+		assert is_ip_address('255.255.255.255') is True
+		assert is_ip_address('0.0.0.0') is True
 
 	def test_valid_ipv6_detection(self):
 		"""Test that valid IPv6 addresses are correctly detected."""
@@ -361,11 +362,11 @@ class TestIsIPAddressHelper:
 		watchdog = SecurityWatchdog(browser_session=browser_session, event_bus=event_bus)
 
 		# Valid IPv6 addresses (without brackets - those are URL-specific)
-		assert watchdog._is_ip_address('::1') is True
-		assert watchdog._is_ip_address('2001:db8::1') is True
-		assert watchdog._is_ip_address('2001:4860:4860::8888') is True
-		assert watchdog._is_ip_address('fe80::1') is True
-		assert watchdog._is_ip_address('2001:db8:85a3::8a2e:370:7334') is True
+		assert is_ip_address('::1') is True
+		assert is_ip_address('2001:db8::1') is True
+		assert is_ip_address('2001:4860:4860::8888') is True
+		assert is_ip_address('fe80::1') is True
+		assert is_ip_address('2001:db8:85a3::8a2e:370:7334') is True
 
 	def test_invalid_ip_detection(self):
 		"""Test that non-IP strings are correctly identified as not IPs."""
@@ -375,22 +376,22 @@ class TestIsIPAddressHelper:
 		watchdog = SecurityWatchdog(browser_session=browser_session, event_bus=event_bus)
 
 		# Domain names (not IPs)
-		assert watchdog._is_ip_address('example.com') is False
-		assert watchdog._is_ip_address('www.google.com') is False
-		assert watchdog._is_ip_address('localhost') is False
+		assert is_ip_address('example.com') is False
+		assert is_ip_address('www.google.com') is False
+		assert is_ip_address('localhost') is False
 
 		# Invalid IPs (rejected by both ipaddress and inet_aton)
-		assert watchdog._is_ip_address('999.999.999.999') is False
-		assert watchdog._is_ip_address('1.2.3.4.5') is False
-		assert watchdog._is_ip_address('not-an-ip') is False
-		assert watchdog._is_ip_address('') is False
+		assert is_ip_address('999.999.999.999') is False
+		assert is_ip_address('1.2.3.4.5') is False
+		assert is_ip_address('not-an-ip') is False
+		assert is_ip_address('') is False
 
 		# Short-form IPv4 strings (1.2.3 == 1.2.0.3) ARE valid IPs that
 		# browsers/kernel resolve — covered by TestNonStandardIPv4Representations.
 
 		# IPs with ports or paths (not valid for the helper - it only checks hostnames)
-		assert watchdog._is_ip_address('192.168.1.1:8080') is False
-		assert watchdog._is_ip_address('192.168.1.1/path') is False
+		assert is_ip_address('192.168.1.1:8080') is False
+		assert is_ip_address('192.168.1.1/path') is False
 
 
 class TestDefaultBehavior:
@@ -585,10 +586,10 @@ class TestNonStandardIPv4Representations:
 		"""
 		watchdog = self._watchdog()
 		# Lone surrogates — common in URLs containing percent-encoded malformed UTF-8.
-		assert watchdog._is_ip_address('\udcff') is False
-		assert watchdog._is_ip_address('\ud800') is False
-		assert watchdog._is_ip_address('caf\udce9.local') is False
-		assert watchdog._is_ip_address('\udcff.example.com') is False
+		assert is_ip_address('\udcff') is False
+		assert is_ip_address('\ud800') is False
+		assert is_ip_address('caf\udce9.local') is False
+		assert is_ip_address('\udcff.example.com') is False
 
 	def test_percent_encoded_ipv4_blocked(self):
 		"""Percent-encoded hostnames that decode to IPs must be blocked.
@@ -607,18 +608,18 @@ class TestNonStandardIPv4Representations:
 		# Fully encoded decimal form: → '2130706433'
 		assert watchdog._is_url_allowed('http://%32%31%33%30%37%30%36%34%33%33/') is False
 		# Direct classifier checks for the same decoded forms.
-		assert watchdog._is_ip_address('%30x7f000001') is True
-		assert watchdog._is_ip_address('%31%32%37.0.0.1') is True
-		assert watchdog._is_ip_address('%32%31%33%30%37%30%36%34%33%33') is True
+		assert is_ip_address('%30x7f000001') is True
+		assert is_ip_address('%31%32%37.0.0.1') is True
+		assert is_ip_address('%32%31%33%30%37%30%36%34%33%33') is True
 
 	def test_malformed_percent_encoding_does_not_crash(self):
 		"""Hostnames with malformed `%` escapes must not crash the classifier."""
 		watchdog = self._watchdog()
 		# `unquote` leaves bad `%`-sequences as-is; we must still treat the
 		# result as a non-IP rather than blowing up.
-		assert watchdog._is_ip_address('%') is False
-		assert watchdog._is_ip_address('%zz') is False
-		assert watchdog._is_ip_address('%2') is False
+		assert is_ip_address('%') is False
+		assert is_ip_address('%zz') is False
+		assert is_ip_address('%2') is False
 
 	def test_unicode_normalized_ipv4_blocked(self):
 		"""Hostnames using fullwidth, circled, or other Unicode digit variants
@@ -638,19 +639,19 @@ class TestNonStandardIPv4Representations:
 		# Circled digits (U+2460+, U+24EA for zero).
 		assert watchdog._is_url_allowed('http://①②⑦.⓪.⓪.①/') is False
 		# Direct classifier checks.
-		assert watchdog._is_ip_address('１２７.０.０.１') is True
-		assert watchdog._is_ip_address('０x7f000001') is True
-		assert watchdog._is_ip_address('①②⑦.⓪.⓪.①') is True
+		assert is_ip_address('１２７.０.０.１') is True
+		assert is_ip_address('０x7f000001') is True
+		assert is_ip_address('①②⑦.⓪.⓪.①') is True
 
 	def test_idn_domains_not_misclassified_as_ip(self):
 		"""Defense against false positives from the new normalization step:
 		legitimate IDN domains (Unicode letters / punycode) MUST NOT be
 		classified as IPs after NFKC."""
 		watchdog = self._watchdog()
-		assert watchdog._is_ip_address('café.example') is False
-		assert watchdog._is_ip_address('xn--caf-dma.example') is False
-		assert watchdog._is_ip_address('日本.example') is False
-		assert watchdog._is_ip_address('xn--wgv71a.example') is False
+		assert is_ip_address('café.example') is False
+		assert is_ip_address('xn--caf-dma.example') is False
+		assert is_ip_address('日本.example') is False
+		assert is_ip_address('xn--wgv71a.example') is False
 
 	def test_idna_dot_separators_blocked(self):
 		"""Per RFC 3490 / UTS46, four code points act as label separators in
@@ -671,6 +672,6 @@ class TestNonStandardIPv4Representations:
 		# Combined with circled-digit normalization.
 		assert watchdog._is_url_allowed('http://①②⑦。⓪。⓪。①/') is False
 		# Direct classifier checks.
-		assert watchdog._is_ip_address('127。0。0。1') is True
-		assert watchdog._is_ip_address('127｡0｡0｡1') is True
-		assert watchdog._is_ip_address('127．0．0．1') is True
+		assert is_ip_address('127。0。0。1') is True
+		assert is_ip_address('127｡0｡0｡1') is True
+		assert is_ip_address('127．0．0．1') is True

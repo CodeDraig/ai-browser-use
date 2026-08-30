@@ -4,7 +4,8 @@ from unittest.mock import AsyncMock
 import pytest
 
 from browser_use.agent.message_manager.service import MessageManager
-from browser_use.agent.views import AgentStepInfo, MessageCompactionSettings
+from browser_use.agent.settings import MessageCompactionSettings
+from browser_use.agent.state import AgentStepInfo
 from browser_use.filesystem.file_system import FileSystem
 from browser_use.llm import BaseChatModel
 from browser_use.llm.messages import SystemMessage

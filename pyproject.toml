@@ -166,6 +166,7 @@ include = [
     "browser_use/skills/**/*.md",
     "browser_use/py.typed",
     "browser_use/dom/**/*.js",
+    "browser_use/browser/*.js",
     "!tests/**/*.py",
     "!debug/*",
 ]

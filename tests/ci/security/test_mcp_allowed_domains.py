@@ -65,16 +65,16 @@ async def test_explicit_empty_list_does_not_override_profile_defaults(server: Br
 	# We capture the resolved allowed_domains and short-circuit before LLM/agent setup.
 	captured_profile_kwargs: dict[str, Any] = {}
 
-	from browser_use.mcp import server as server_module
+	from browser_use.mcp import browser_operations as operations_module
 
-	original_browser_profile = server_module.BrowserProfile
+	original_browser_profile = operations_module.BrowserProfile
 
 	class CapturingBrowserProfile:
 		def __init__(self, **kwargs: Any) -> None:
 			captured_profile_kwargs.update(kwargs)
 			raise _StopAgentSetup('captured')
 
-	server_module.BrowserProfile = CapturingBrowserProfile  # type: ignore[misc]
+	operations_module.BrowserProfile = CapturingBrowserProfile  # type: ignore[misc]
 
 	# Stub out the LLM construction path so we don't need real credentials —
 	# the override decision happens before BrowserProfile() is called regardless,
@@ -86,7 +86,7 @@ async def test_explicit_empty_list_does_not_override_profile_defaults(server: Br
 				allowed_domains=[],
 			)
 	finally:
-		server_module.BrowserProfile = original_browser_profile  # type: ignore[misc]
+		operations_module.BrowserProfile = original_browser_profile  # type: ignore[misc]
 
 	# The profile dict should NOT have allowed_domains overridden to [] —
 	# either the key is absent (profile defaults apply) or it carries whatever

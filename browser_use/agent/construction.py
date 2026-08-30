@@ -2,27 +2,18 @@ from __future__ import annotations
 
 import logging
 import re
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 from browser_use import Browser, BrowserProfile, BrowserSession
+from browser_use.agent.history import AgentStructuredOutput
 from browser_use.agent.message_manager.service import MessageManager
 from browser_use.agent.prompts import SystemPrompt
-from browser_use.agent.url_detection import (
-	is_placeholder_url,
-	sanitize_url_candidate,
-)
-from browser_use.agent.views import (
-	AgentOutput,
-	AgentStructuredOutput,
-)
+from browser_use.agent.results import AgentOutput
+from browser_use.agent.url_detection import is_placeholder_url, sanitize_url_candidate
 from browser_use.browser.session import DEFAULT_BROWSER_PROFILE
-from browser_use.config import get_environment_config
-from browser_use.filesystem.file_system import FileSystem
 from browser_use.llm.base import BaseChatModel
 from browser_use.tools.registry.views import ActionModel
 from browser_use.tools.service import Tools
-from browser_use.version import get_browser_use_version
 
 if TYPE_CHECKING:
 	from browser_use.agent.service import Agent
@@ -30,81 +21,11 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class AgentConfiguration:
-	"""Owns configuration behavior for an Agent."""
+class AgentConstruction:
+	"""Construct browser, tools, messages, action schemas, and initial actions."""
 
 	def __init__(self, agent: Agent) -> None:
 		self.agent = agent
-
-	def normalize_model_settings(
-		self,
-		llm: BaseChatModel | None,
-		page_extraction_llm: BaseChatModel | None,
-		judge_llm: BaseChatModel | None,
-		flash_mode: bool,
-		enable_planning: bool,
-		llm_screenshot_size: tuple[int, int] | None,
-		llm_timeout: int | None,
-		available_file_paths: list[str] | None,
-	) -> tuple[BaseChatModel, BaseChatModel, BaseChatModel, bool, bool, tuple[int, int] | None, int, list[str]]:
-		"""Resolve model-derived defaults without retaining independent state."""
-		if llm_screenshot_size is not None:
-			if not isinstance(llm_screenshot_size, tuple) or len(llm_screenshot_size) != 2:
-				raise ValueError('llm_screenshot_size must be a tuple of (width, height)')
-			width, height = llm_screenshot_size
-			if not isinstance(width, int) or not isinstance(height, int):
-				raise ValueError('llm_screenshot_size dimensions must be integers')
-			if width < 100 or height < 100:
-				raise ValueError('llm_screenshot_size dimensions must be at least 100 pixels')
-			self.agent.logger.info(f'🖼️  LLM screenshot resizing enabled: {width}x{height}')
-
-		if llm is None:
-			default_llm_name = get_environment_config().DEFAULT_LLM
-			if default_llm_name:
-				from browser_use.llm.models import get_llm_by_name
-
-				llm = get_llm_by_name(default_llm_name)
-			else:
-				from browser_use import ChatBrowserUse
-
-				llm = ChatBrowserUse()
-
-		if llm.provider == 'browser-use':
-			flash_mode = True
-		if flash_mode:
-			enable_planning = False
-
-		if llm_screenshot_size is None:
-			model_name = getattr(llm, 'model', '')
-			if isinstance(model_name, str) and model_name.rsplit('/', 1)[-1].startswith('claude-sonnet'):
-				llm_screenshot_size = (1400, 850)
-				logger.info('🖼️  Auto-configured LLM screenshot size for Claude Sonnet: 1400x850')
-
-		if page_extraction_llm is None:
-			page_extraction_llm = llm
-		if judge_llm is None:
-			judge_llm = llm
-		if llm_timeout is None:
-			model_name = getattr(llm, 'model', '').lower()
-			if 'gemini' in model_name:
-				llm_timeout = 90 if '3-pro' in model_name else 75
-			elif 'groq' in model_name:
-				llm_timeout = 30
-			elif any(name in model_name for name in ('o3', 'claude', 'sonnet', 'deepseek')):
-				llm_timeout = 90
-			else:
-				llm_timeout = 75
-
-		return (
-			llm,
-			page_extraction_llm,
-			judge_llm,
-			flash_mode,
-			enable_planning,
-			llm_screenshot_size,
-			llm_timeout,
-			available_file_paths if available_file_paths is not None else [],
-		)
 
 	def create_browser_session(
 		self,
@@ -221,79 +142,6 @@ class AgentConfiguration:
 			self.agent.logger.debug(f'Could not parse output schema: {e}')
 
 		return task
-
-	def _set_file_system(self, file_system_path: str | None = None) -> None:
-		# Check for conflicting parameters
-		if self.agent.state.file_system_state and file_system_path:
-			raise ValueError(
-				'Cannot provide both file_system_state (from agent state) and file_system_path. '
-				'Either restore from existing state or create new file system at specified path, not both.'
-			)
-
-		# Check if we should restore from existing state first
-		if self.agent.state.file_system_state:
-			try:
-				# Restore file system from state at the exact same location
-				self.agent.file_system = FileSystem.from_state(self.agent.state.file_system_state)
-				# The parent directory of base_dir is the original file_system_path
-				self.agent.file_system_path = str(self.agent.file_system.base_dir)
-				self.agent.logger.debug(f'💾 File system restored from state to: {self.agent.file_system_path}')
-				return
-			except Exception as e:
-				self.agent.logger.error(f'💾 Failed to restore file system from state: {e}')
-				raise e
-
-		# Initialize new file system
-		try:
-			if file_system_path:
-				self.agent.file_system = FileSystem(file_system_path)
-				self.agent.file_system_path = file_system_path
-			else:
-				# Use the agent directory for file system
-				self.agent.file_system = FileSystem(self.agent.agent_directory)
-				self.agent.file_system_path = str(self.agent.agent_directory)
-		except Exception as e:
-			self.agent.logger.error(f'💾 Failed to initialize file system: {e}.')
-			raise e
-
-		# Save file system state to agent state
-		self.agent.state.file_system_state = self.agent.file_system.get_state()
-
-		self.agent.logger.debug(f'💾 File system path: {self.agent.file_system_path}')
-
-	def _set_screenshot_service(self) -> None:
-		"""Initialize screenshot service using agent directory"""
-		try:
-			from browser_use.screenshots.service import ScreenshotService
-
-			self.agent.screenshot_service = ScreenshotService(self.agent.agent_directory)
-			self.agent.logger.debug(f'📸 Screenshot service initialized in: {self.agent.agent_directory}/screenshots')
-		except Exception as e:
-			self.agent.logger.error(f'📸 Failed to initialize screenshot service: {e}.')
-			raise e
-
-	def _set_browser_use_version_and_source(self, source_override: str | None = None) -> None:
-		"""Get the version from pyproject.toml and determine the source of the browser-use package"""
-		# Use the helper function for version detection
-		version = get_browser_use_version()
-
-		# Determine source
-		try:
-			package_root = Path(__file__).parent.parent.parent
-			repo_files = ['.git', 'README.md', 'docs', 'examples']
-			if all(Path(package_root / file).exists() for file in repo_files):
-				source = 'git'
-			else:
-				source = 'pip'
-		except Exception as e:
-			self.agent.logger.debug(f'Error determining source: {e}')
-			source = 'unknown'
-
-		if source_override is not None:
-			source = source_override
-		# self.agent.logger.debug(f'Version: {version}, Source: {source}')  # moved later to _log_agent_run so that people are more likely to include it in copy-pasted support ticket logs
-		self.agent.version = version
-		self.agent.source = source
 
 	def _setup_action_models(self) -> None:
 		"""Setup dynamic action models from tools registry"""
@@ -493,14 +341,3 @@ class AgentConfiguration:
 			converted_actions.append(action_model)
 
 		return converted_actions
-
-	def _verify_and_setup_llm(self):
-		"""
-		Verify that the LLM API keys are setup and the LLM API is responding properly.
-		Also handles tool calling method detection if in auto mode.
-		"""
-
-		# Skip verification if already done
-		if getattr(self.agent.llm, '_verified_api_keys', None) is True or get_environment_config().SKIP_LLM_API_KEY_VERIFICATION:
-			setattr(self.agent.llm, '_verified_api_keys', True)
-			return True

@@ -1,7 +1,8 @@
 import pytest
 from pydantic import ValidationError
 
-from browser_use.agent.views import ActionResult, AgentHistory, AgentHistoryList, AgentOutput, StepMetadata
+from browser_use.agent.history import AgentHistory, AgentHistoryList
+from browser_use.agent.results import ActionResult, AgentOutput, StepMetadata
 from browser_use.browser.views import BrowserStateHistory
 from browser_use.tools.service import Tools
 

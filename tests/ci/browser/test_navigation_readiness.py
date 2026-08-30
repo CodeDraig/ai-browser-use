@@ -69,7 +69,7 @@ async def test_first_tab_navigation_still_works_after_second_tab_opens(httpserve
 
 	# Navigate the FIRST tab again (same domain -> 3s fallback timeout pre-fix)
 	start = time.monotonic()
-	await browser_session._navigate_and_wait(httpserver.url_for('/a2'), tab_a, wait_until='load')
+	await browser_session.navigation._navigate_and_wait(httpserver.url_for('/a2'), tab_a, wait_until='load')
 	elapsed = time.monotonic() - start
 
 	assert elapsed < FAST_NAVIGATION_BOUND_S, (
@@ -97,7 +97,9 @@ async def test_readiness_timeout_is_reported_not_swallowed(httpserver, browser_s
 	target_id = browser_session.agent_focus_target_id
 	assert target_id is not None
 
-	status = await browser_session._navigate_and_wait(httpserver.url_for('/hanging'), target_id, timeout=1.0, wait_until='load')
+	status = await browser_session.navigation._navigate_and_wait(
+		httpserver.url_for('/hanging'), target_id, timeout=1.0, wait_until='load'
+	)
 
 	assert status is not None and 'timeout' in status, f'readiness timeout was swallowed, got status={status!r}'
 
@@ -108,7 +110,7 @@ async def test_successful_navigation_returns_no_timeout_status(httpserver, brows
 	target_id = browser_session.agent_focus_target_id
 	assert target_id is not None
 
-	status = await browser_session._navigate_and_wait(httpserver.url_for('/ok'), target_id, wait_until='load')
+	status = await browser_session.navigation._navigate_and_wait(httpserver.url_for('/ok'), target_id, wait_until='load')
 	assert status is None
 
 
@@ -132,7 +134,9 @@ async def test_same_document_navigation_completes_immediately(httpserver, browse
 	await asyncio.sleep(1.5)
 
 	start = time.monotonic()
-	status = await browser_session._navigate_and_wait(httpserver.url_for('/page') + '#section', target_id, wait_until='load')
+	status = await browser_session.navigation._navigate_and_wait(
+		httpserver.url_for('/page') + '#section', target_id, wait_until='load'
+	)
 	elapsed = time.monotonic() - start
 
 	assert elapsed < FAST_NAVIGATION_BOUND_S, f'same-document navigation took {elapsed:.2f}s — burned the readiness timeout'

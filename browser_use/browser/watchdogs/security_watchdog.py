@@ -11,7 +11,7 @@ from browser_use.browser.events import (
 	TabCreatedEvent,
 )
 from browser_use.browser.watchdog_base import BaseWatchdog
-from browser_use.security import is_ip_address, is_url_allowed_by_policy
+from browser_use.security import is_url_allowed_by_policy
 
 if TYPE_CHECKING:
 	pass
@@ -84,14 +84,10 @@ class SecurityWatchdog(BaseWatchdog):
 
 			# Try to close the offending tab
 			try:
-				await self.browser_session._cdp_close_page(event.target_id)
+				await self.browser_session.cdp.close_page(event.target_id)
 				self.logger.info(f'⛔️ Closed new tab with non-allowed URL: {event.url}')
 			except Exception as e:
 				self.logger.error(f'⛔️ Failed to close new tab with non-allowed URL: {type(e).__name__} {e}')
-
-	def _is_ip_address(self, host: str) -> bool:
-		"""Compatibility wrapper for direct security-watchdog tests."""
-		return is_ip_address(host)
 
 	def _is_url_allowed(self, url: str) -> bool:
 		"""Check if a URL is allowed based on the allowed_domains configuration.

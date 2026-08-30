@@ -8,13 +8,14 @@ import pytest
 from browser_use.actor.page import Page
 from browser_use.agent.history_replay import AgentHistoryReplay
 from browser_use.browser import python_highlights
+from browser_use.browser.frame_resolver import FrameResolver
 from browser_use.browser.profile import BrowserProfile
 from browser_use.browser.session import BrowserSession
-from browser_use.browser.session_manager import SessionManager
 from browser_use.browser.views import BrowserStateSummary
+from browser_use.dom.history import DOMInteractedElement
 from browser_use.dom.serializer.serializer import DOMTreeSerializer
 from browser_use.dom.service import DomService
-from browser_use.dom.views import DOMInteractedElement, DOMRect, EnhancedDOMTreeNode, EnhancedSnapshotNode, NodeType
+from browser_use.dom.tree import DOMRect, EnhancedDOMTreeNode, EnhancedSnapshotNode, NodeType
 
 
 def _node(
@@ -181,7 +182,7 @@ async def test_history_remapping_prefers_the_original_frame():
 	action = FakeAction()
 	state = BrowserStateSummary(dom_state=serialized_state, url='https://example.test', title='Test', tabs=[])
 
-	updated_action = await AgentHistoryReplay(agent)._update_action_indices(historical_element, cast(Any, action), state)
+	updated_action = await AgentHistoryReplay(agent).matcher.update_action_indices(historical_element, cast(Any, action), state)
 
 	assert updated_action is action
 	assert action.index == 101
@@ -239,7 +240,7 @@ async def test_interaction_highlight_uses_the_nodes_cdp_session(monkeypatch):
 		assert cdp_session is iframe_cdp_session
 		return None
 
-	monkeypatch.setattr(SessionManager, 'cdp_client_for_node', resolve_node_session)
+	monkeypatch.setattr(FrameResolver, 'cdp_client_for_node', resolve_node_session)
 	monkeypatch.setattr(session.dom_state, 'get_element_coordinates', no_coordinates)
 
 	await session.dom_state.highlight_interaction_element(iframe_input)
@@ -275,9 +276,9 @@ async def test_actor_prompt_element_uses_the_selected_nodes_session(monkeypatch)
 		assert node is iframe_input
 		return SimpleNamespace(session_id='iframe')
 
-	monkeypatch.setattr('browser_use.actor.page.DOMTreeSerializer', FakeSerializer)
+	monkeypatch.setattr('browser_use.actor.page_extraction.DOMTreeSerializer', FakeSerializer)
 	monkeypatch.setattr(DomService, 'get_dom_tree', get_dom_tree)
-	monkeypatch.setattr(SessionManager, 'cdp_client_for_node', resolve_node_session)
+	monkeypatch.setattr(FrameResolver, 'cdp_client_for_node', resolve_node_session)
 
 	page = Page(session, target_id='target-main', session_id='main', llm=cast(Any, FakeLLM()))
 	element = await page.get_element_by_prompt('card number')

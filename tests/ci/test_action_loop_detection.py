@@ -1,11 +1,7 @@
 """Tests for action loop detection — behavioral cycle breaking (PR #4)."""
 
 from browser_use.agent.service import Agent
-from browser_use.agent.views import (
-	ActionLoopDetector,
-	PageFingerprint,
-	compute_action_hash,
-)
+from browser_use.agent.state import ActionLoopDetector, PageFingerprint, compute_action_hash
 from browser_use.llm.messages import UserMessage
 from tests.ci.conftest import create_mock_llm
 

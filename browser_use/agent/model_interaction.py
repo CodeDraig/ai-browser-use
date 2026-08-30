@@ -11,13 +11,10 @@ from pydantic import BaseModel, ValidationError
 
 from browser_use.agent.judge import construct_judge_messages
 from browser_use.agent.message_manager.utils import save_conversation
+from browser_use.agent.results import AgentOutput, JudgementResult
+from browser_use.agent.state import AgentStepInfo
 from browser_use.agent.url_detection import (
 	substitute_url_candidates,
-)
-from browser_use.agent.views import (
-	AgentOutput,
-	AgentStepInfo,
-	JudgementResult,
 )
 from browser_use.browser.views import BrowserStateSummary
 from browser_use.llm.base import BaseChatModel

@@ -1,7 +1,7 @@
 """Tests for step budget warning injection (IMP-7a)."""
 
 from browser_use.agent.service import Agent
-from browser_use.agent.views import AgentStepInfo
+from browser_use.agent.state import AgentStepInfo
 from browser_use.llm.messages import UserMessage
 from tests.ci.conftest import create_mock_llm
 

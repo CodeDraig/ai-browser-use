@@ -12,7 +12,7 @@ import tempfile
 import pytest
 from pytest_httpserver import HTTPServer
 
-from browser_use.agent.views import ActionResult
+from browser_use.agent.results import ActionResult
 from browser_use.browser import BrowserProfile, BrowserSession
 from browser_use.tools.service import Tools
 from tests.ci.action_helpers import execute_registered_action

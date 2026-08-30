@@ -32,7 +32,7 @@ async def test_dict_storage_state_cookies_are_applied_on_start():
 	)
 	await session.start()
 	try:
-		cookies = await session._cdp_get_cookies()
+		cookies = await session.cdp.get_cookies()
 		by_name = {c.get('name'): c for c in cookies}
 		assert 'bu_dict_state_test' in by_name, (
 			f'dict storage_state cookie never reached the browser; browser has {sorted(by_name)}. '
@@ -58,7 +58,7 @@ async def test_session_cookie_expiry_normalized_from_dict():
 	)
 	await session.start()
 	try:
-		cookies = await session._cdp_get_cookies()
+		cookies = await session.cdp.get_cookies()
 		names = {c.get('name') for c in cookies}
 		assert 'bu_session_cookie' in names, f'session cookie (expires=-1) from dict was dropped; browser has {sorted(names)}'
 	finally:

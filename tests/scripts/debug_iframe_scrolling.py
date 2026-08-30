@@ -13,9 +13,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from browser_use.agent.service import Agent
-from browser_use.agent.views import ActionModel
 from browser_use.browser import BrowserProfile, BrowserSession
 from browser_use.browser.events import BrowserStateRequestEvent
+from browser_use.tools.registry.views import ActionModel
 
 # Import the mock LLM helper from conftest
 from tests.ci.conftest import create_mock_llm

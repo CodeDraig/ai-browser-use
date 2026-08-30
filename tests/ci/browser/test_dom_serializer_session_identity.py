@@ -2,7 +2,7 @@
 
 from browser_use.dom.serializer.paint_order import PaintOrderRemover
 from browser_use.dom.serializer.serializer import DOMTreeSerializer
-from browser_use.dom.views import DOMRect, EnhancedDOMTreeNode, EnhancedSnapshotNode, NodeType, SimplifiedNode
+from browser_use.dom.tree import DOMRect, EnhancedDOMTreeNode, EnhancedSnapshotNode, NodeType, SimplifiedNode
 
 
 def _node(

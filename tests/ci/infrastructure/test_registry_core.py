@@ -17,7 +17,7 @@ from pydantic import Field
 from pytest_httpserver import HTTPServer
 from pytest_httpserver.httpserver import HandlerType
 
-from browser_use.agent.views import ActionResult
+from browser_use.agent.results import ActionResult
 from browser_use.browser import BrowserSession
 from browser_use.browser.profile import BrowserProfile
 from browser_use.llm.messages import UserMessage

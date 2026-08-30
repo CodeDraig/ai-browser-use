@@ -17,10 +17,10 @@ async def analyze_frame_hierarchy(url):
 
 	try:
 		print('🚀 Starting browser...')
-		await session.on_BrowserStartEvent(BrowserStartEvent())
+		await session.lifecycle.on_BrowserStartEvent(BrowserStartEvent())
 
 		print(f'📍 Navigating to: {url}')
-		await session._cdp_navigate(url)
+		await session.cdp.navigate(url)
 		await asyncio.sleep(3)
 
 		print('\n' + '=' * 80)
@@ -130,7 +130,7 @@ async def analyze_frame_hierarchy(url):
 		print('UNIFIED FRAME HIERARCHY (get_all_frames method)')
 		print('=' * 80)
 
-		all_frames, target_sessions = await session.session_manager.get_all_frames()
+		all_frames, target_sessions = await session.session_manager.frames.get_all_frames()
 
 		# Clean up sessions
 		for tid, sess_id in target_sessions.items():

@@ -2,8 +2,9 @@
 
 import re
 
-from browser_use.agent.views import AgentHistoryList, DetectedVariable
-from browser_use.dom.views import DOMInteractedElement
+from browser_use.agent.history import AgentHistoryList
+from browser_use.agent.variables import DetectedVariable
+from browser_use.dom.history import DOMInteractedElement
 
 
 def detect_variables_in_history(history: AgentHistoryList) -> dict[str, DetectedVariable]:

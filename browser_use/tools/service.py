@@ -7,7 +7,7 @@ from typing import Generic, TypeVar
 
 from pydantic import BaseModel
 
-from browser_use.agent.views import ActionModel, ActionResult
+from browser_use.agent.results import ActionResult
 from browser_use.browser import BrowserSession
 from browser_use.browser.views import BrowserError
 from browser_use.filesystem.file_system import FileSystem
@@ -19,6 +19,7 @@ from browser_use.tools.actions.completion import register_done_action
 from browser_use.tools.actions.registration import register_default_actions
 from browser_use.tools.errors import handle_browser_error
 from browser_use.tools.registry.service import Registry
+from browser_use.tools.registry.views import ActionModel
 from browser_use.tools.views import ClickElementAction, ClickElementActionIndexOnly
 
 logger = logging.getLogger(__name__)

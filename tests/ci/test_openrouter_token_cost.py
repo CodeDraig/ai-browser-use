@@ -63,7 +63,7 @@ async def test_token_cost_falls_back_to_openrouter_pricing(monkeypatch: pytest.M
 			max_output_tokens=16_384,
 		)
 
-	monkeypatch.setattr('browser_use.tokens.service.get_openrouter_model_pricing', fake_openrouter_pricing)
+	monkeypatch.setattr('browser_use.tokens.pricing.get_openrouter_model_pricing', fake_openrouter_pricing)
 
 	token_cost = TokenCost(include_cost=True)
 	token_cost._initialized = True
@@ -89,7 +89,7 @@ async def test_calculate_cost_uses_openrouter_cache_pricing(monkeypatch: pytest.
 			max_output_tokens=None,
 		)
 
-	monkeypatch.setattr('browser_use.tokens.service.get_openrouter_model_pricing', fake_openrouter_pricing)
+	monkeypatch.setattr('browser_use.tokens.pricing.get_openrouter_model_pricing', fake_openrouter_pricing)
 
 	token_cost = TokenCost(include_cost=True)
 	token_cost._initialized = True
@@ -129,7 +129,7 @@ async def test_registered_openrouter_llm_forces_openrouter_pricing(monkeypatch: 
 			max_output_tokens=None,
 		)
 
-	monkeypatch.setattr('browser_use.tokens.service.get_openrouter_model_pricing', fake_openrouter_pricing)
+	monkeypatch.setattr('browser_use.tokens.pricing.get_openrouter_model_pricing', fake_openrouter_pricing)
 
 	token_cost = TokenCost(include_cost=True)
 	token_cost._initialized = True

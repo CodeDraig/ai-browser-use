@@ -11,7 +11,7 @@ import os
 from pydantic import BaseModel, Field
 
 from browser_use import Agent, Browser, ChatBrowserUse, sandbox
-from browser_use.agent.views import AgentHistoryList
+from browser_use.agent.history import AgentHistoryList
 
 
 class IPLocation(BaseModel):

@@ -13,12 +13,10 @@ class TestBrowserProfileDisableSecurity:
 
 		# Test with disable_security=False (baseline)
 		profile_normal = BrowserProfile(disable_security=False, user_data_dir=tempfile.mkdtemp(prefix='test-normal-'))
-		profile_normal.detect_display_configuration()
 		args_normal = profile_normal.get_args()
 
 		# Test with disable_security=True
 		profile_security_disabled = BrowserProfile(disable_security=True, user_data_dir=tempfile.mkdtemp(prefix='test-security-'))
-		profile_security_disabled.detect_display_configuration()
 		args_security_disabled = profile_security_disabled.get_args()
 
 		# Extract disable-features args
@@ -67,7 +65,6 @@ class TestBrowserProfileDisableSecurity:
 			# Add duplicate features to test deduplication
 			args=['--disable-features=TestFeature1,TestFeature2', '--disable-features=TestFeature2,TestFeature3'],
 		)
-		profile.detect_display_configuration()
 		args = profile.get_args()
 
 		# Extract disable-features args

@@ -1,15 +1,15 @@
-"""Regression test for DOMTreeSerializer leaking paint-order-occluded text.
+"""Regression test for DOMTextSerializer leaking paint-order-occluded text.
 
 PaintOrderRemover.calculate_paint_order() correctly computes which nodes are
 fully covered by another element painted on top of them (e.g. content
 underneath an open modal/dropdown) and marks them `ignored_by_paint_order`.
-DOMTreeSerializer.serialize_tree() must respect that flag for TEXT_NODEs, or
+DOMTextSerializer.serialize_tree() must respect that flag for TEXT_NODEs, or
 covered text still ends up in the DOM string sent to the LLM every step.
 """
 
 from browser_use.dom.serializer.paint_order import PaintOrderRemover
-from browser_use.dom.serializer.serializer import DOMTreeSerializer
-from browser_use.dom.views import DOMRect, EnhancedDOMTreeNode, EnhancedSnapshotNode, NodeType, SimplifiedNode
+from browser_use.dom.serializer.text_serializer import DOMTextSerializer
+from browser_use.dom.tree import DOMRect, EnhancedDOMTreeNode, EnhancedSnapshotNode, NodeType, SimplifiedNode
 
 
 def _make_snapshot(paint_order: int, bounds: DOMRect) -> EnhancedSnapshotNode:
@@ -75,7 +75,7 @@ class TestPaintOrderTextExclusion:
 		assert hidden_simplified.ignored_by_paint_order is True
 		assert top_simplified.ignored_by_paint_order is False
 
-		output = DOMTreeSerializer.serialize_tree(wrapper, [])
+		output = DOMTextSerializer.serialize_tree(wrapper, [])
 
 		assert 'TOP LAYER TEXT' in output
 		assert 'HIDDEN BEHIND MODAL' not in output

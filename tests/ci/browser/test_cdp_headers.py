@@ -48,7 +48,7 @@ async def test_cdp_client_headers_passed_on_connect():
 
 	session = BrowserSession(cdp_url='wss://remote-browser.example.com/cdp', headers=test_headers)
 
-	with patch('browser_use.browser.session.TimeoutWrappedCDPClient') as mock_cdp_client_class:
+	with patch('browser_use.browser.connection.TimeoutWrappedCDPClient') as mock_cdp_client_class:
 		# Setup mock CDPClient instance
 		mock_cdp_client = AsyncMock()
 		mock_cdp_client_class.return_value = mock_cdp_client
@@ -98,7 +98,7 @@ async def test_cdp_client_no_headers_when_none():
 
 	assert session.browser_profile.headers is None
 
-	with patch('browser_use.browser.session.TimeoutWrappedCDPClient') as mock_cdp_client_class:
+	with patch('browser_use.browser.connection.TimeoutWrappedCDPClient') as mock_cdp_client_class:
 		mock_cdp_client = AsyncMock()
 		mock_cdp_client_class.return_value = mock_cdp_client
 		mock_cdp_client.start = AsyncMock()
@@ -135,7 +135,7 @@ async def test_headers_used_for_json_version_endpoint():
 	# Use HTTP URL (not ws://) to trigger /json/version fetch
 	session = BrowserSession(cdp_url='http://remote-browser.example.com:9222', headers=test_headers)
 
-	with patch('browser_use.browser.session.httpx.AsyncClient') as mock_client_class:
+	with patch('browser_use.browser.connection.httpx.AsyncClient') as mock_client_class:
 		mock_client = AsyncMock()
 		mock_client_class.return_value.__aenter__ = AsyncMock(return_value=mock_client)
 		mock_client_class.return_value.__aexit__ = AsyncMock()
@@ -145,7 +145,7 @@ async def test_headers_used_for_json_version_endpoint():
 		mock_response.json.return_value = {'webSocketDebuggerUrl': 'ws://remote-browser.example.com:9222/devtools/browser/abc'}
 		mock_client.get = AsyncMock(return_value=mock_response)
 
-		with patch('browser_use.browser.session.TimeoutWrappedCDPClient') as mock_cdp_client_class:
+		with patch('browser_use.browser.connection.TimeoutWrappedCDPClient') as mock_cdp_client_class:
 			mock_cdp_client = AsyncMock()
 			mock_cdp_client_class.return_value = mock_cdp_client
 			mock_cdp_client.start = AsyncMock()

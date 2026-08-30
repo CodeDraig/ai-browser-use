@@ -1,7 +1,7 @@
 import logging
 from typing import TYPE_CHECKING
 
-from browser_use.agent.views import ActionResult
+from browser_use.agent.results import ActionResult
 from browser_use.browser import BrowserSession
 from browser_use.browser.events import GetDropdownOptionsEvent
 from browser_use.tools.views import GetDropdownOptionsAction, SelectDropdownOptionAction

@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from browser_use.agent.views import AgentOutput
+from browser_use.agent.results import AgentOutput
 from browser_use.llm import BaseChatModel
 from browser_use.llm.exceptions import ModelProviderError, ModelRateLimitError
 from browser_use.llm.views import ChatInvokeCompletion

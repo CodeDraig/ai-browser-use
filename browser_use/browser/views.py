@@ -5,7 +5,8 @@ from bubus import BaseEvent
 from cdp_use.cdp.target import TargetID
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_serializer
 
-from browser_use.dom.views import DOMInteractedElement, SerializedDOMState
+from browser_use.dom.history import DOMInteractedElement
+from browser_use.dom.serialized_state import SerializedDOMState
 
 # Known placeholder image data for about:blank pages - a 4x4 white PNG
 PLACEHOLDER_4PX_SCREENSHOT = (

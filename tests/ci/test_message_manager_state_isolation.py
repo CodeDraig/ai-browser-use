@@ -9,7 +9,7 @@ across otherwise-independent instances.
 import tempfile
 
 from browser_use.agent.message_manager.service import MessageManager
-from browser_use.agent.views import MessageManagerState
+from browser_use.agent.message_manager.views import MessageManagerState
 from browser_use.filesystem.file_system import FileSystem
 from browser_use.llm.messages import SystemMessage
 

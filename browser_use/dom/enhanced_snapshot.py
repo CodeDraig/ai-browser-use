@@ -11,7 +11,7 @@ from cdp_use.cdp.domsnapshot.types import (
 	NodeTreeSnapshot,
 )
 
-from browser_use.dom.views import DOMRect, EnhancedSnapshotNode
+from browser_use.dom.tree import DOMRect, EnhancedSnapshotNode
 
 # Only the ESSENTIAL computed styles for interactivity and visibility detection
 REQUIRED_COMPUTED_STYLES = [

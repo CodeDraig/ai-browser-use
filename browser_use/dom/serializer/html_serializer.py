@@ -1,6 +1,6 @@
 # @file purpose: Serializes enhanced DOM trees to HTML format including shadow roots
 
-from browser_use.dom.views import EnhancedDOMTreeNode, NodeType
+from browser_use.dom.tree import EnhancedDOMTreeNode, NodeType
 
 
 class HTMLSerializer:

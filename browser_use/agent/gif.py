@@ -7,7 +7,7 @@ import os
 import platform
 from typing import TYPE_CHECKING
 
-from browser_use.agent.views import AgentHistoryList
+from browser_use.agent.history import AgentHistoryList
 from browser_use.browser.views import PLACEHOLDER_4PX_SCREENSHOT
 from browser_use.config import get_environment_config
 

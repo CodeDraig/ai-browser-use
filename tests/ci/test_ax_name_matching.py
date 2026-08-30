@@ -11,10 +11,15 @@ because the dropdown closed during the wait between steps.
 
 from unittest.mock import AsyncMock
 
+import pytest
+from pydantic import TypeAdapter, ValidationError
+
+from browser_use.agent.history import AgentHistory, AgentHistoryList
+from browser_use.agent.results import ActionResult, RerunSummaryAction, StepMetadata
 from browser_use.agent.service import Agent
-from browser_use.agent.views import ActionResult, AgentHistory, AgentHistoryList, RerunSummaryAction, StepMetadata
 from browser_use.browser.views import BrowserStateHistory
-from browser_use.dom.views import DOMInteractedElement, DOMRect, MatchLevel, NodeType
+from browser_use.dom.history import DOMInteractedElement, MatchLevel
+from browser_use.dom.tree import DOMRect, NodeType
 from tests.ci.conftest import create_mock_llm
 
 
@@ -241,126 +246,28 @@ async def test_ax_name_matching_requires_same_node_type(httpserver):
 		await agent.close()
 
 
-def test_match_level_enum_includes_ax_name():
-	"""Test that MatchLevel enum includes AX_NAME level."""
+def test_match_level_enum_ends_at_ax_name():
+	"""Current histories do not use the removed legacy attribute fallback."""
 	assert hasattr(MatchLevel, 'AX_NAME')
 	assert MatchLevel.AX_NAME.value == 4
-	assert MatchLevel.ATTRIBUTE.value == 5  # AX_NAME comes before ATTRIBUTE
+	assert not hasattr(MatchLevel, 'ATTRIBUTE')
 
 
-async def test_ax_name_matching_before_attribute_matching(httpserver):
-	"""Test that ax_name matching (Level 4) is tried before attribute matching (Level 5).
-
-	This ensures the correct matching order: EXACT -> STABLE -> XPATH -> AX_NAME -> ATTRIBUTE
-	"""
-	# Page has element with text content that becomes its ax_name
-	# The DIV has role="menuitem" and text "Contact" which becomes its accessible name
-	# but NO aria-label/id/name attributes - so attribute matching will fail but ax_name should work
-	test_html = """<!DOCTYPE html>
-	<html>
-	<body>
-		<div role="menuitem">Contact</div>
-	</body>
-	</html>"""
-	httpserver.expect_request('/test').respond_with_data(test_html, content_type='text/html')
-	test_url = httpserver.url_for('/test')
-
-	summary_action = RerunSummaryAction(
-		summary='Rerun completed',
-		success=True,
-		completion_status='complete',
-	)
-
-	async def custom_ainvoke(*args, **kwargs):
-		output_format = args[1] if len(args) > 1 else kwargs.get('output_format')
-		if output_format is RerunSummaryAction:
-			from browser_use.llm.views import ChatInvokeCompletion
-
-			return ChatInvokeCompletion(completion=summary_action, usage=None)
-		raise ValueError('Unexpected output_format')
-
-	mock_summary_llm = AsyncMock()
-	mock_summary_llm.ainvoke.side_effect = custom_ainvoke
-
-	llm = create_mock_llm(actions=None)
-	agent = Agent(task='Test task', llm=llm)
-	AgentOutput = agent.AgentOutput
-
-	# Historical element has NO aria-label attribute (attribute matching will fail)
-	# but HAS ax_name (ax_name matching should work)
-	historical_element = DOMInteractedElement(
-		node_id=1,
-		backend_node_id=1,
-		frame_id=None,
-		node_type=NodeType.ELEMENT_NODE,
-		node_value='',
-		node_name='DIV',
-		# No aria-label, id, or name - attribute matching will fail
-		attributes={'role': 'menuitem'},
-		x_path='html/body/div[99]',  # Wrong xpath
-		element_hash=12345,  # Wrong hash
-		stable_hash=12345,  # Wrong stable hash
-		bounds=DOMRect(x=0, y=0, width=100, height=50),
-		ax_name='Contact',  # ax_name from accessibility tree
-	)
-
-	navigate_step = AgentHistory(
-		model_output=AgentOutput(
-			evaluation_previous_goal=None,
-			memory='Navigate',
-			next_goal=None,
-			action=[{'navigate': {'url': test_url}}],  # type: ignore[arg-type]
-		),
-		result=[ActionResult(long_term_memory='Navigated')],
-		state=BrowserStateHistory(
-			url=test_url,
-			title='Test',
-			tabs=[],
-			interacted_element=[None],
-		),
-		metadata=StepMetadata(step_start_time=0, step_end_time=1, step_number=1, step_interval=0.1),
-	)
-
-	click_step = AgentHistory(
-		model_output=AgentOutput(
-			evaluation_previous_goal=None,
-			memory='Click Contact',
-			next_goal=None,
-			action=[{'click': {'index': 1}}],  # type: ignore[arg-type]
-		),
-		result=[ActionResult(long_term_memory='Clicked')],
-		state=BrowserStateHistory(
-			url=test_url,
-			title='Test',
-			tabs=[],
-			interacted_element=[historical_element],
-		),
-		metadata=StepMetadata(step_start_time=1, step_end_time=2, step_number=2, step_interval=0.1),
-	)
-
-	history = AgentHistoryList(history=[navigate_step, click_step])
-
-	try:
-		# Should succeed via ax_name matching (Level 4)
-		# since hash, stable_hash, xpath all fail but ax_name matches
-		results = await agent.rerun_history(
-			history,
-			skip_failures=False,
-			max_retries=1,
-			summary_llm=mock_summary_llm,
-		)
-
-		# Navigation + click + summary
-		assert len(results) == 3
-		# Click should succeed (matched via ax_name)
-		click_result = results[1]
-		assert click_result.error is None, f'Expected ax_name match to succeed, got: {click_result.error}'
-
-	finally:
-		await agent.close()
-
-
-# Tests for dropdown/menu re-opening behavior
+def test_current_history_element_requires_stable_hash():
+	payload = {
+		'node_id': 1,
+		'backend_node_id': 1,
+		'frame_id': None,
+		'node_type': NodeType.ELEMENT_NODE,
+		'node_value': '',
+		'node_name': 'button',
+		'attributes': {},
+		'bounds': None,
+		'x_path': '//button',
+		'element_hash': 1,
+	}
+	with pytest.raises(ValidationError, match='stable_hash'):
+		TypeAdapter(DOMInteractedElement).validate_python(payload)
 
 
 def test_is_menu_opener_step_detects_aria_haspopup():
@@ -402,7 +309,7 @@ def test_is_menu_opener_step_detects_aria_haspopup():
 		metadata=StepMetadata(step_start_time=0, step_end_time=1, step_number=1, step_interval=0.1),
 	)
 
-	assert agent._history_replay._is_menu_opener_step(history_item) is True
+	assert agent._history_replay.retry_policy.is_menu_opener_step(history_item) is True
 
 
 def test_is_menu_opener_step_detects_guidewire_toggle():
@@ -444,7 +351,7 @@ def test_is_menu_opener_step_detects_guidewire_toggle():
 		metadata=StepMetadata(step_start_time=0, step_end_time=1, step_number=1, step_interval=0.1),
 	)
 
-	assert agent._history_replay._is_menu_opener_step(history_item) is True
+	assert agent._history_replay.retry_policy.is_menu_opener_step(history_item) is True
 
 
 def test_is_menu_opener_step_returns_false_for_regular_element():
@@ -486,7 +393,7 @@ def test_is_menu_opener_step_returns_false_for_regular_element():
 		metadata=StepMetadata(step_start_time=0, step_end_time=1, step_number=1, step_interval=0.1),
 	)
 
-	assert agent._history_replay._is_menu_opener_step(history_item) is False
+	assert agent._history_replay.retry_policy.is_menu_opener_step(history_item) is False
 
 
 def test_is_menu_item_element_detects_role_menuitem():
@@ -509,7 +416,7 @@ def test_is_menu_item_element_detects_role_menuitem():
 		ax_name='New Contact',
 	)
 
-	assert agent._history_replay._is_menu_item_element(menu_item) is True
+	assert agent._history_replay.retry_policy.is_menu_item_element(menu_item) is True
 
 
 def test_is_menu_item_element_detects_guidewire_class():
@@ -532,7 +439,7 @@ def test_is_menu_item_element_detects_guidewire_class():
 		ax_name='New Contact',
 	)
 
-	assert agent._history_replay._is_menu_item_element(menu_item) is True
+	assert agent._history_replay.retry_policy.is_menu_item_element(menu_item) is True
 
 
 def test_is_menu_item_element_returns_false_for_regular_element():
@@ -555,4 +462,4 @@ def test_is_menu_item_element_returns_false_for_regular_element():
 		ax_name='Submit',
 	)
 
-	assert agent._history_replay._is_menu_item_element(regular_element) is False
+	assert agent._history_replay.retry_policy.is_menu_item_element(regular_element) is False

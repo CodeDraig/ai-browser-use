@@ -1,7 +1,7 @@
 from collections import defaultdict
 from dataclasses import dataclass
 
-from browser_use.dom.views import SimplifiedNode
+from browser_use.dom.tree import SimplifiedNode
 
 """
 Helper class for maintaining a union of rectangles (used for order of elements calculation)

@@ -7,7 +7,8 @@ import pytest
 from browser_use.agent.prompts import AgentMessagePrompt
 from browser_use.agent.service import Agent
 from browser_use.browser.views import BrowserStateSummary, TabInfo
-from browser_use.dom.views import DOMSelectorMap, EnhancedDOMTreeNode, NodeType, SerializedDOMState, SimplifiedNode
+from browser_use.dom.serialized_state import SerializedDOMState
+from browser_use.dom.tree import DOMSelectorMap, EnhancedDOMTreeNode, NodeType, SimplifiedNode
 from browser_use.filesystem.file_system import FileSystem
 from browser_use.llm.anthropic.chat import ChatAnthropic
 from browser_use.llm.azure.chat import ChatAzureOpenAI

@@ -11,7 +11,7 @@ from browser_use.browser.profile import BrowserProfile
 from browser_use.browser.session import BrowserSession
 from browser_use.browser.watchdogs import dom_watchdog
 from browser_use.browser.watchdogs.dom_watchdog import DOMWatchdog
-from browser_use.dom.service import _MAX_JS_CLICK_LISTENER_ELEMENTS, DomService
+from browser_use.dom.collection import _MAX_JS_CLICK_LISTENER_ELEMENTS, DOMTreeCollector
 
 
 @pytest.fixture
@@ -82,10 +82,10 @@ async def test_ax_tree_failure_preserves_structural_dom(httpserver, browser_sess
 		content_type='text/html',
 	)
 
-	async def fail_ax_tree(_service: DomService, _target_id):
+	async def fail_ax_tree(_collector: DOMTreeCollector, _target_id):
 		raise asyncio.CancelledError
 
-	monkeypatch.setattr(DomService, '_get_ax_tree_for_all_frames', fail_ax_tree)
+	monkeypatch.setattr(DOMTreeCollector, '_get_ax_tree_for_all_frames', fail_ax_tree)
 	await browser_session.navigate_to(httpserver.url_for('/ax-unavailable'))
 
 	state = await browser_session.get_browser_state_summary(include_screenshot=False)

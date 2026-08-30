@@ -16,9 +16,9 @@ moving it back into `<agent_state>` would silently shrink the cacheable prefix.
 """
 
 from browser_use.agent.prompts import AgentMessagePrompt
-from browser_use.agent.views import AgentStepInfo
+from browser_use.agent.state import AgentStepInfo
 from browser_use.browser.views import BrowserStateSummary, PageInfo, TabInfo
-from browser_use.dom.views import SerializedDOMState
+from browser_use.dom.serialized_state import SerializedDOMState
 from browser_use.filesystem.file_system import FileSystem
 
 

@@ -1,6 +1,6 @@
 import logging
 
-from browser_use.agent.views import ActionResult
+from browser_use.agent.results import ActionResult
 from browser_use.browser.views import BrowserError
 
 logger = logging.getLogger('browser_use.tools.service')

@@ -139,7 +139,7 @@ class StorageStateWatchdog(BaseWatchdog):
 
 		try:
 			# Get current cookies using CDP
-			current_cookies = await self.browser_session._cdp_get_cookies()
+			current_cookies = await self.browser_session.cdp.get_cookies()
 
 			# Convert to comparable format, using .get() for optional fields
 			current_cookie_set = {
@@ -173,7 +173,7 @@ class StorageStateWatchdog(BaseWatchdog):
 
 			try:
 				# Get current storage state using CDP
-				storage_state = await self.browser_session._cdp_get_storage_state()
+				storage_state = await self.browser_session.cdp.get_storage_state()
 
 				# Update our last known state
 				self._last_cookie_state = storage_state.get('cookies', []).copy()
@@ -262,7 +262,7 @@ class StorageStateWatchdog(BaseWatchdog):
 						c.pop('expires', None)
 					normalized_cookies.append(Cookie(**c))
 
-				await self.browser_session._cdp_set_cookies(normalized_cookies)
+				await self.browser_session.cdp.set_cookies(normalized_cookies)
 				self._last_cookie_state = storage['cookies'].copy()
 				self.logger.debug(f'[StorageStateWatchdog] Added {len(storage["cookies"])} cookies from storage state')
 
@@ -286,7 +286,7 @@ class StorageStateWatchdog(BaseWatchdog):
 							'  } catch (e) {}\n'
 							'})();'
 						)
-						await self.browser_session._cdp_add_init_script(script)
+						await self.browser_session.cdp.add_init_script(script)
 
 					if origin.get('sessionStorage'):
 						lines = []
@@ -302,7 +302,7 @@ class StorageStateWatchdog(BaseWatchdog):
 							'  } catch (e) {}\n'
 							'})();'
 						)
-						await self.browser_session._cdp_add_init_script(script)
+						await self.browser_session.cdp.add_init_script(script)
 				self.logger.debug(
 					f'[StorageStateWatchdog] Applied localStorage/sessionStorage from {len(storage["origins"])} origins'
 				)
@@ -350,7 +350,7 @@ class StorageStateWatchdog(BaseWatchdog):
 			return []
 
 		try:
-			cookies = await self.browser_session._cdp_get_cookies()
+			cookies = await self.browser_session.cdp.get_cookies()
 			# Cookie is a TypedDict, cast to dict for compatibility
 			return [dict(cookie) for cookie in cookies]
 		except Exception as e:
@@ -367,7 +367,7 @@ class StorageStateWatchdog(BaseWatchdog):
 			# Convert dicts to Cookie objects
 			cookie_objects = [Cookie(**cookie_dict) if isinstance(cookie_dict, dict) else cookie_dict for cookie_dict in cookies]
 			# Set cookies using CDP
-			await self.browser_session._cdp_set_cookies(cookie_objects)
+			await self.browser_session.cdp.set_cookies(cookie_objects)
 			self.logger.debug(f'[StorageStateWatchdog] Added {len(cookies)} cookies')
 		except Exception as e:
 			self.logger.error(f'[StorageStateWatchdog] Failed to add cookies: {e}')

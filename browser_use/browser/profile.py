@@ -4,7 +4,6 @@ import sys
 import tempfile
 from collections.abc import Iterable
 from enum import Enum
-from fnmatch import fnmatch
 from functools import cache
 from pathlib import Path
 from typing import Annotated, Any, Literal, Self
@@ -13,6 +12,8 @@ from urllib.parse import urlparse
 from pydantic import AfterValidator, AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from browser_use.browser.cloud.views import CreateBrowserRequest
+from browser_use.browser.extensions import ExtensionManager
+from browser_use.browser.profile_runtime import configure_display, copy_browser_profile
 from browser_use.config import get_environment_config
 from browser_use.logging_utils import log_pretty_path
 
@@ -67,13 +68,6 @@ def _get_enable_default_extensions_default() -> bool:
 
 CHROME_DEBUG_PORT = 9242  # use a non-default port to avoid conflicts with other tools / devs using 9222
 DOMAIN_OPTIMIZATION_THRESHOLD = 100  # Convert domain lists to sets for O(1) lookup when >= this size
-CHROME_PROFILE_TRANSIENT_FILE_PATTERNS = (
-	'Singleton*',
-	'*.lock',
-	'*-journal',
-	'LOCK',
-	'LOCKFILE',
-)
 CHROME_DISABLED_COMPONENTS = [
 	# Playwright defaults: https://github.com/microsoft/playwright/blob/41008eeddd020e2dee1c540f7c0cdfa337e99637/packages/playwright-core/src/server/chromium/chromiumSwitches.ts#L76
 	# AcceptCHFrame,AutoExpandDetailsElement,AvoidUnnecessaryBeforeUnloadCheckSync,CertificateTransparencyComponentUpdater,DeferRendererTasksAfterInput,DestroyProfileOnBrowserClose,DialMediaRouteProvider,ExtensionManifestV2Disabled,GlobalMediaControls,HttpsUpgrades,ImprovedCookieControls,LazyFrameLoading,LensOverlay,MediaRouter,PaintHolding,ThirdPartyStoragePartitioning,Translate
@@ -124,33 +118,6 @@ CHROME_DISABLED_COMPONENTS = [
 	'ExtensionDisableUnsupportedDeveloper',
 	'ExtensionManifestV2Unsupported',
 ]
-
-
-def _ignore_chrome_profile_transient_files(_src: str, names: list[str]) -> set[str]:
-	"""Skip Chrome lock/journal files that should not be copied into a temp profile."""
-	return {name for name in names if any(fnmatch(name, pattern) for pattern in CHROME_PROFILE_TRANSIENT_FILE_PATTERNS)}
-
-
-def _is_chrome_profile_lock_error(error: BaseException) -> bool:
-	"""Detect Windows sharing violations or permission errors raised while copying a Chrome profile."""
-	if isinstance(error, PermissionError):
-		return True
-
-	if getattr(error, 'winerror', None) == 32:
-		return True
-
-	# shutil.Error stores copy failures as (src, dst, message/exception) triples.
-	for arg in getattr(error, 'args', ()):
-		if isinstance(arg, (list, tuple)):
-			for item in arg:
-				if isinstance(item, (list, tuple)) and item:
-					detail = item[-1]
-					if isinstance(detail, BaseException) and _is_chrome_profile_lock_error(detail):
-						return True
-					if 'WinError 32' in str(detail) or 'being used by another process' in str(detail):
-						return True
-
-	return False
 
 
 CHROME_HEADLESS_ARGS = [
@@ -847,65 +814,8 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 
 	def model_post_init(self, __context: Any) -> None:
 		"""Called after model initialization to set up display configuration."""
-		self.detect_display_configuration()
-		self._copy_profile()
-
-	def _copy_profile(self) -> None:
-		"""Copy profile to temp directory if user_data_dir is not None and not already a temp dir."""
-		if self.user_data_dir is None:
-			return
-
-		user_data_str = str(self.user_data_dir)
-		if 'browser-use-user-data-dir-' in user_data_str.lower():
-			# Already using a temp directory, no need to copy
-			return
-
-		is_chrome = (
-			'chrome' in user_data_str.lower()
-			or ('chrome' in str(self.executable_path).lower())
-			or self.channel
-			in (BrowserChannel.CHROME, BrowserChannel.CHROME_BETA, BrowserChannel.CHROME_DEV, BrowserChannel.CHROME_CANARY)
-		)
-
-		if not is_chrome:
-			return
-
-		temp_dir = tempfile.mkdtemp(prefix='browser-use-user-data-dir-')
-		path_original_user_data = Path(self.user_data_dir)
-		path_original_profile = path_original_user_data / self.profile_directory
-		path_temp_profile = Path(temp_dir) / self.profile_directory
-
-		if path_original_profile.exists():
-			import shutil
-
-			try:
-				shutil.copytree(
-					path_original_profile,
-					path_temp_profile,
-					ignore=_ignore_chrome_profile_transient_files,
-				)
-			except (OSError, shutil.Error) as error:
-				if not _is_chrome_profile_lock_error(error):
-					raise
-
-				shutil.rmtree(temp_dir, ignore_errors=True)
-				raise RuntimeError(
-					f'Unable to copy Chrome profile "{self.profile_directory}" because one or more files are locked. '
-					'Close any Chrome windows using this profile, or start browser-use with --cdp-url to connect to '
-					'an already-running browser instead of copying the profile.'
-				) from error
-			local_state_src = path_original_user_data / 'Local State'
-			local_state_dst = Path(temp_dir) / 'Local State'
-			if local_state_src.exists():
-				shutil.copy(local_state_src, local_state_dst)
-			logger.info(f'Copied profile ({self.profile_directory}) and Local State to temp directory: {temp_dir}')
-
-		else:
-			Path(temp_dir).mkdir(parents=True, exist_ok=True)
-			path_temp_profile.mkdir(parents=True, exist_ok=True)
-			logger.info(f'Created new profile ({self.profile_directory}) in temp directory: {temp_dir}')
-
-		self.user_data_dir = temp_dir
+		configure_display(self, ViewportSize, get_display_size())
+		copy_browser_profile(self)
 
 	def get_args(self) -> list[str]:
 		"""Get the list of all Chrome CLI launch args for this profile (compiled from defaults, user-provided, and system-specific)."""
@@ -939,7 +849,7 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 				if self.window_position
 				else []
 			),
-			*(self._get_extension_args() if self.enable_default_extensions else []),
+			*(ExtensionManager(self).get_args() if self.enable_default_extensions else []),
 		]
 
 		# Proxy flags
@@ -986,317 +896,3 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 		final_args_list = BrowserLaunchArgs.args_as_list(BrowserLaunchArgs.args_as_dict(non_disable_features_args))
 
 		return final_args_list
-
-	def _get_extension_args(self) -> list[str]:
-		"""Get Chrome args for enabling default extensions (ad blocker and cookie handler)."""
-		extension_paths = self._ensure_default_extensions_downloaded()
-
-		args = [
-			'--enable-extensions',
-			'--disable-extensions-file-access-check',
-			'--disable-extensions-http-throttling',
-			'--enable-extension-activity-logging',
-		]
-
-		if extension_paths:
-			args.append(f'--load-extension={",".join(extension_paths)}')
-
-		return args
-
-	@staticmethod
-	def _check_extension_manifest_version(ext_dir: Path, ext_name: str) -> bool:
-		"""Check that an extension uses Manifest V3. Returns False for MV2 extensions (unsupported by Chrome 145+)."""
-		import json
-
-		manifest_path = ext_dir / 'manifest.json'
-		if not manifest_path.exists():
-			return False
-		try:
-			with open(manifest_path, encoding='utf-8') as f:
-				manifest = json.load(f)
-			mv = manifest.get('manifest_version', 2)
-			if mv < 3:
-				logger.warning(f'Skipping {ext_name} extension: Manifest V{mv} is no longer supported by Chrome')
-				return False
-			return True
-		except Exception:
-			return False
-
-	def _ensure_default_extensions_downloaded(self) -> list[str]:
-		"""
-		Ensure default extensions are downloaded and cached locally.
-		Returns list of paths to extension directories.
-		"""
-
-		# Extension definitions - optimized for automation and content extraction
-		# uBlock Origin Lite (ad blocking, MV3) + "I still don't care about cookies" (cookie banner handling)
-		extensions = [
-			{
-				'name': 'uBlock Origin Lite',
-				'id': 'ddkjiahejlhfcafbddmgiahcphecmpfh',
-				'url': 'https://clients2.google.com/service/update2/crx?response=redirect&prodversion=133&acceptformat=crx3&x=id%3Dddkjiahejlhfcafbddmgiahcphecmpfh%26uc',
-			},
-			{
-				'name': "I still don't care about cookies",
-				'id': 'edibdbjcniadpccecjdfdjjppcpchdlm',
-				'url': 'https://clients2.google.com/service/update2/crx?response=redirect&prodversion=133&acceptformat=crx3&x=id%3Dedibdbjcniadpccecjdfdjjppcpchdlm%26uc',
-			},
-			{
-				'name': 'Force Background Tab',
-				'id': 'gidlfommnbibbmegmgajdbikelkdcmcl',
-				'url': 'https://clients2.google.com/service/update2/crx?response=redirect&prodversion=133&acceptformat=crx3&x=id%3Dgidlfommnbibbmegmgajdbikelkdcmcl%26uc',
-			},
-			# {
-			# 	'name': 'Captcha Solver: Auto captcha solving service',
-			# 	'id': 'pgojnojmmhpofjgdmaebadhbocahppod',
-			# 	'url': 'https://clients2.google.com/service/update2/crx?response=redirect&prodversion=130&acceptformat=crx3&x=id%3Dpgojnojmmhpofjgdmaebadhbocahppod%26uc',
-			# },
-			# Consent-O-Matic disabled - using uBlock Origin's cookie lists instead for simplicity
-			# {
-			# 	'name': 'Consent-O-Matic',
-			# 	'id': 'mdjildafknihdffpkfmmpnpoiajfjnjd',
-			# 	'url': 'https://clients2.google.com/service/update2/crx?response=redirect&prodversion=130&acceptformat=crx3&x=id%3Dmdjildafknihdffpkfmmpnpoiajfjnjd%26uc',
-			# },
-			# {
-			# 	'name': 'Privacy | Protect Your Payments',
-			# 	'id': 'hmgpakheknboplhmlicfkkgjipfabmhp',
-			# 	'url': 'https://clients2.google.com/service/update2/crx?response=redirect&prodversion=130&acceptformat=crx3&x=id%3Dhmgpakheknboplhmlicfkkgjipfabmhp%26uc',
-			# },
-		]
-
-		# Create extensions cache directory
-		cache_dir = get_environment_config().extensions_dir
-		cache_dir.mkdir(parents=True, exist_ok=True)
-
-		extension_paths = []
-		loaded_extension_names = []
-
-		for ext in extensions:
-			ext_dir = cache_dir / ext['id']
-			crx_file = cache_dir / f'{ext["id"]}.crx'
-
-			# Check if extension is already extracted
-			if ext_dir.exists() and (ext_dir / 'manifest.json').exists():
-				if not self._check_extension_manifest_version(ext_dir, ext['name']):
-					continue
-				extension_paths.append(str(ext_dir))
-				loaded_extension_names.append(ext['name'])
-				continue
-
-			try:
-				# Download extension if not cached
-				if not crx_file.exists():
-					logger.info(f'📦 Downloading {ext["name"]} extension...')
-					self._download_extension(ext['url'], crx_file)
-				else:
-					logger.debug(f'📦 Found cached {ext["name"]} .crx file')
-
-				# Extract extension
-				logger.info(f'📂 Extracting {ext["name"]} extension...')
-				self._extract_extension(crx_file, ext_dir)
-
-				if not self._check_extension_manifest_version(ext_dir, ext['name']):
-					continue
-
-				extension_paths.append(str(ext_dir))
-				loaded_extension_names.append(ext['name'])
-
-			except Exception as e:
-				logger.warning(f'⚠️ Failed to setup {ext["name"]} extension: {e}')
-				continue
-
-		# Apply minimal patch to cookie extension with configurable whitelist
-		for i, path in enumerate(extension_paths):
-			if loaded_extension_names[i] == "I still don't care about cookies":
-				self._apply_minimal_extension_patch(Path(path), self.cookie_whitelist_domains)
-
-		if extension_paths:
-			logger.debug(f'[BrowserProfile] 🧩 Extensions loaded ({len(extension_paths)}): [{", ".join(loaded_extension_names)}]')
-		else:
-			logger.warning('[BrowserProfile] ⚠️ No default extensions could be loaded')
-
-		return extension_paths
-
-	def _apply_minimal_extension_patch(self, ext_dir: Path, whitelist_domains: list[str]) -> None:
-		"""Minimal patch: pre-populate chrome.storage.local with configurable domain whitelist."""
-		try:
-			bg_path = ext_dir / 'data' / 'background.js'
-			if not bg_path.exists():
-				return
-
-			with open(bg_path, encoding='utf-8') as f:
-				content = f.read()
-
-			# Create the whitelisted domains object for JavaScript with proper indentation
-			whitelist_entries = [f'        "{domain}": true' for domain in whitelist_domains]
-			whitelist_js = '{\n' + ',\n'.join(whitelist_entries) + '\n      }'
-
-			# Find the initialize() function and inject storage setup before updateSettings()
-			# The actual function uses 2-space indentation, not tabs
-			old_init = """async function initialize(checkInitialized, magic) {
-  if (checkInitialized && initialized) {
-    return;
-  }
-  loadCachedRules();
-  await updateSettings();
-  await recreateTabList(magic);
-  initialized = true;
-}"""
-
-			# New function with configurable whitelist initialization
-			new_init = f"""// Pre-populate storage with configurable domain whitelist if empty
-async function ensureWhitelistStorage() {{
-  const result = await chrome.storage.local.get({{ settings: null }});
-  if (!result.settings) {{
-    const defaultSettings = {{
-      statusIndicators: true,
-      whitelistedDomains: {whitelist_js}
-    }};
-    await chrome.storage.local.set({{ settings: defaultSettings }});
-  }}
-}}
-
-async function initialize(checkInitialized, magic) {{
-  if (checkInitialized && initialized) {{
-    return;
-  }}
-  loadCachedRules();
-  await ensureWhitelistStorage(); // Add storage initialization
-  await updateSettings();
-  await recreateTabList(magic);
-  initialized = true;
-}}"""
-
-			if old_init in content:
-				content = content.replace(old_init, new_init)
-
-				with open(bg_path, 'w', encoding='utf-8') as f:
-					f.write(content)
-
-				domain_list = ', '.join(whitelist_domains)
-				logger.info(f'[BrowserProfile] ✅ Cookie extension: {domain_list} pre-populated in storage')
-			else:
-				logger.debug('[BrowserProfile] Initialize function not found for patching')
-
-		except Exception as e:
-			logger.debug(f'[BrowserProfile] Could not patch extension storage: {e}')
-
-	def _download_extension(self, url: str, output_path: Path) -> None:
-		"""Download extension .crx file."""
-		import urllib.request
-
-		try:
-			with urllib.request.urlopen(url) as response:
-				with open(output_path, 'wb') as f:
-					f.write(response.read())
-		except Exception as e:
-			raise Exception(f'Failed to download extension: {e}')
-
-	def _extract_extension(self, crx_path: Path, extract_dir: Path) -> None:
-		"""Extract .crx file to directory."""
-		import os
-		import zipfile
-
-		# Remove existing directory
-		if extract_dir.exists():
-			import shutil
-
-			shutil.rmtree(extract_dir)
-
-		extract_dir.mkdir(parents=True, exist_ok=True)
-
-		try:
-			# CRX files are ZIP files with a header, try to extract as ZIP
-			with zipfile.ZipFile(crx_path, 'r') as zip_ref:
-				zip_ref.extractall(extract_dir)
-
-			# Verify manifest exists
-			if not (extract_dir / 'manifest.json').exists():
-				raise Exception('No manifest.json found in extension')
-
-		except zipfile.BadZipFile:
-			# CRX files have a header before the ZIP data
-			# Skip the CRX header and extract the ZIP part
-			with open(crx_path, 'rb') as f:
-				# Read CRX header to find ZIP start
-				magic = f.read(4)
-				if magic != b'Cr24':
-					raise Exception('Invalid CRX file format')
-
-				version = int.from_bytes(f.read(4), 'little')
-				if version == 2:
-					pubkey_len = int.from_bytes(f.read(4), 'little')
-					sig_len = int.from_bytes(f.read(4), 'little')
-					f.seek(16 + pubkey_len + sig_len)  # Skip to ZIP data
-				elif version == 3:
-					header_len = int.from_bytes(f.read(4), 'little')
-					f.seek(12 + header_len)  # Skip to ZIP data
-
-				# Extract ZIP data
-				zip_data = f.read()
-
-			# Write ZIP data to temp file and extract
-
-			with tempfile.NamedTemporaryFile(suffix='.zip', delete=False) as temp_zip:
-				temp_zip.write(zip_data)
-				temp_zip.flush()
-
-				with zipfile.ZipFile(temp_zip.name, 'r') as zip_ref:
-					zip_ref.extractall(extract_dir)
-
-				os.unlink(temp_zip.name)
-
-	def detect_display_configuration(self) -> None:
-		"""
-		Detect the system display size and initialize the display-related config defaults:
-		        screen, window_size, window_position, viewport, no_viewport, device_scale_factor
-		"""
-
-		display_size = get_display_size()
-		has_screen_available = bool(display_size)
-		self.screen = self.screen or display_size or ViewportSize(width=1920, height=1080)
-
-		# if no headless preference specified, prefer headful if there is a display available
-		if self.headless is None:
-			self.headless = not has_screen_available
-
-		# Determine viewport behavior based on mode and user preferences
-		user_provided_viewport = self.viewport is not None
-
-		if self.headless:
-			# Headless mode: always use viewport for content size control
-			self.viewport = self.viewport or self.window_size or self.screen
-			self.window_position = None
-			self.window_size = None
-			self.no_viewport = False
-		else:
-			# Headful mode: respect user's viewport preference
-			self.window_size = self.window_size or self.screen
-
-			if user_provided_viewport:
-				# User explicitly set viewport - enable viewport mode
-				self.no_viewport = False
-			else:
-				# Default headful: content fits to window (no viewport)
-				self.no_viewport = True if self.no_viewport is None else self.no_viewport
-
-		# Handle special requirements (device_scale_factor forces viewport mode)
-		if self.device_scale_factor and self.no_viewport is None:
-			self.no_viewport = False
-
-		# Finalize configuration
-		if self.no_viewport:
-			# No viewport mode: content adapts to window
-			self.viewport = None
-			self.device_scale_factor = None
-			self.screen = None
-			assert self.viewport is None
-			assert self.no_viewport is True
-		else:
-			# Viewport mode: ensure viewport is set
-			self.viewport = self.viewport or self.screen
-			self.device_scale_factor = self.device_scale_factor or 1.0
-			assert self.viewport is not None
-			assert self.no_viewport is False
-
-		assert not (self.headless and self.no_viewport), 'headless=True and no_viewport=True cannot both be set at the same time'

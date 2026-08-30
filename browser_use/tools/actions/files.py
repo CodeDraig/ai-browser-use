@@ -1,7 +1,7 @@
 import logging
 from typing import TYPE_CHECKING
 
-from browser_use.agent.views import ActionResult
+from browser_use.agent.results import ActionResult
 from browser_use.filesystem.file_system import FileSystem
 
 if TYPE_CHECKING:

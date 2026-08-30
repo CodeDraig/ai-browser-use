@@ -620,7 +620,7 @@ class TestDomainListOptimization:
 			),
 		)
 
-		assert await browser_session._get_committed_navigation_url('target') == 'https://redirected.test/final'
+		assert await browser_session.navigation._get_committed_navigation_url('target') == 'https://redirected.test/final'
 		get_history.assert_awaited_once_with(session_id='session')
 
 	@pytest.mark.parametrize(
@@ -645,9 +645,9 @@ class TestDomainListOptimization:
 			user_data_dir=None,
 		)
 		browser_session = BrowserSession(browser_profile=profile)
-		monkeypatch.setattr(browser_session, '_get_committed_navigation_url', AsyncMock(return_value=committed_url))
+		monkeypatch.setattr(browser_session.navigation, '_get_committed_navigation_url', AsyncMock(return_value=committed_url))
 
-		assert await browser_session._get_navigation_event_url('target', 'https://requested.test') == expected_url
+		assert await browser_session.navigation._get_navigation_event_url('target', 'https://requested.test') == expected_url
 
 	async def test_navigation_exception_emits_committed_redirect_url(self, monkeypatch):
 		from types import SimpleNamespace
@@ -663,15 +663,15 @@ class TestDomainListOptimization:
 		)
 		dispatch = AsyncMock()
 		monkeypatch.setattr(browser_session.event_bus, 'dispatch', dispatch)
-		monkeypatch.setattr(browser_session, '_navigate_and_wait', AsyncMock(side_effect=TimeoutError('timed out')))
+		monkeypatch.setattr(browser_session.navigation, '_navigate_and_wait', AsyncMock(side_effect=TimeoutError('timed out')))
 		monkeypatch.setattr(
-			browser_session,
+			browser_session.navigation,
 			'_get_committed_navigation_url',
 			AsyncMock(return_value='https://blocked.test/final'),
 		)
 
 		with pytest.raises(TimeoutError, match='timed out'):
-			await browser_session.on_NavigateToUrlEvent(NavigateToUrlEvent(url='https://allowed.test/start'))
+			await browser_session.navigation.on_NavigateToUrlEvent(NavigateToUrlEvent(url='https://allowed.test/start'))
 
 		navigation_complete = next(
 			call.args[0] for call in dispatch.await_args_list if isinstance(call.args[0], NavigationCompleteEvent)

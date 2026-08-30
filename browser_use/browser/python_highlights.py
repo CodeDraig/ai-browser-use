@@ -12,7 +12,7 @@ import os
 
 from PIL import Image, ImageDraw, ImageFont
 
-from browser_use.dom.views import DOMSelectorMap, EnhancedDOMTreeNode
+from browser_use.dom.tree import DOMSelectorMap, EnhancedDOMTreeNode
 from browser_use.logging_utils import time_execution_async
 
 logger = logging.getLogger(__name__)

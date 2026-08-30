@@ -2,23 +2,35 @@ import inspect
 from unittest.mock import AsyncMock
 
 from browser_use import Agent, BrowserProfile, BrowserSession
-from browser_use.agent.configuration import AgentConfiguration
+from browser_use.agent.construction import AgentConstruction
 from browser_use.agent.execution import AgentExecution
+from browser_use.agent.history import AgentHistoryList
 from browser_use.agent.history_replay import AgentHistoryReplay
 from browser_use.agent.model_interaction import AgentModelInteraction
-from browser_use.agent.views import AgentHistoryList, AgentStepInfo
+from browser_use.agent.model_settings import AgentModelSettings
+from browser_use.agent.state import AgentStepInfo
+from browser_use.agent.state_restoration import AgentStateRestoration
 
 
 def test_agent_components_share_the_agent_as_their_only_state_owner(browser_session, mock_llm):
 	agent = Agent(task='Test task', llm=mock_llm, browser=browser_session)
 
-	assert isinstance(agent._configuration, AgentConfiguration)
+	assert isinstance(agent._construction, AgentConstruction)
+	assert isinstance(agent._model_settings, AgentModelSettings)
+	assert isinstance(agent._state_restoration, AgentStateRestoration)
 	assert isinstance(agent._model_interaction, AgentModelInteraction)
 	assert isinstance(agent._execution, AgentExecution)
 	assert isinstance(agent._history_replay, AgentHistoryReplay)
 	assert all(
 		component.agent is agent
-		for component in (agent._configuration, agent._model_interaction, agent._execution, agent._history_replay)
+		for component in (
+			agent._construction,
+			agent._model_settings,
+			agent._state_restoration,
+			agent._model_interaction,
+			agent._execution,
+			agent._history_replay,
+		)
 	)
 
 

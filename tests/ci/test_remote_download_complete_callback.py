@@ -78,7 +78,7 @@ async def test_remote_download_complete_invokes_registered_callback(tmp_path) ->
 	wd, progress_capture = _make_watchdog(tmp_path)
 
 	# Drive attach_to_target so the downloadProgress handler is registered.
-	await wd.attach_to_target('FAKE_TARGET_1')
+	await wd.tracker.attach_to_target('FAKE_TARGET_1')
 	assert progress_capture.handler is not None, 'downloadProgress handler was not registered'
 
 	# Seed the "will begin" cache so the completed event can resolve a filename.
@@ -112,7 +112,7 @@ async def test_remote_download_complete_invokes_registered_callback(tmp_path) ->
 @pytest.mark.asyncio
 async def test_remote_download_complete_clears_cdp_cache(tmp_path) -> None:
 	wd, progress_capture = _make_watchdog(tmp_path)
-	await wd.attach_to_target('FAKE_TARGET_2')
+	await wd.tracker.attach_to_target('FAKE_TARGET_2')
 
 	wd._cdp_downloads_info['guid-456'] = {
 		'url': 'https://example.com/data.csv',

@@ -17,7 +17,8 @@ from typing import Any
 
 import pytest
 
-from browser_use.agent.views import ActionModel, ActionResult
+from browser_use.agent.results import ActionResult
+from browser_use.tools.registry.views import ActionModel
 from browser_use.tools.service import Tools
 
 

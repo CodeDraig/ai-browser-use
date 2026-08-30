@@ -58,8 +58,8 @@ def _track_page(browser_session: BrowserSession, cdp_client: MagicMock) -> None:
 	)
 	cdp_session._lifecycle_events = []
 	manager._sessions['page-session'] = cdp_session
-	manager._main_frame_ids['page-session'] = 'main-frame'
-	manager._fetch_sessions['page-target'] = 'page-session'
+	manager.lifecycle._main_frame_ids['page-session'] = 'main-frame'
+	manager.navigation_policy.fetch_sessions['page-target'] = 'page-session'
 
 
 def _paused_request(request_id: str, url: str, *, frame_id: str = 'main-frame') -> dict:
@@ -143,7 +143,7 @@ async def test_new_page_blocked_close_error_with_absent_target_returns_closed_ha
 async def test_new_page_blocked_close_retries_when_target_remains_live() -> None:
 	browser_session, cdp_client = _policy_session()
 	_track_page(browser_session, cdp_client)
-	browser_session.session_manager._TARGET_CLOSE_CONFIRMATION_TIMEOUT = 0.0
+	browser_session.session_manager.navigation_policy._TARGET_CLOSE_CONFIRMATION_TIMEOUT = 0.0
 	cdp_client.send.Target.closeTarget.side_effect = [RuntimeError('first close failed'), {'success': True}]
 	cdp_client.send.Target.getTargets.side_effect = [
 		{'targetInfos': [{'targetId': 'page-target'}]},
@@ -162,7 +162,7 @@ async def test_new_page_blocked_close_retries_when_target_remains_live() -> None
 async def test_new_page_blocked_close_raises_when_target_survives_both_attempts() -> None:
 	browser_session, cdp_client = _policy_session()
 	_track_page(browser_session, cdp_client)
-	browser_session.session_manager._TARGET_CLOSE_CONFIRMATION_TIMEOUT = 0.0
+	browser_session.session_manager.navigation_policy._TARGET_CLOSE_CONFIRMATION_TIMEOUT = 0.0
 	cdp_client.send.Target.closeTarget.side_effect = [RuntimeError('first close failed'), RuntimeError('second close failed')]
 	cdp_client.send.Target.getTargets.return_value = {'targetInfos': [{'targetId': 'page-target'}]}
 
@@ -178,7 +178,7 @@ async def test_new_page_blocked_close_raises_when_target_survives_both_attempts(
 async def test_new_page_blocked_close_raises_when_target_inventory_is_unavailable() -> None:
 	browser_session, cdp_client = _policy_session()
 	_track_page(browser_session, cdp_client)
-	browser_session.session_manager._TARGET_CLOSE_CONFIRMATION_TIMEOUT = 0.0
+	browser_session.session_manager.navigation_policy._TARGET_CLOSE_CONFIRMATION_TIMEOUT = 0.0
 	cdp_client.send.Target.getTargets.side_effect = RuntimeError('target inventory unavailable')
 
 	with pytest.raises(RuntimeError, match=r'target page-target.*could not be confirmed closed.*inventory unavailable'):
@@ -194,10 +194,10 @@ async def test_strict_remediation_rechecks_closure_without_emitting_duplicate_er
 	browser_session, cdp_client = _policy_session()
 	_track_page(browser_session, cdp_client)
 	manager = browser_session.session_manager
-	manager._new_page_targets.add('page-target')
+	manager.navigation_policy.new_page_targets.add('page-target')
 
-	await manager._remediate_blocked_navigation('page-target', 'https://blocked.example/path')
-	await manager._remediate_blocked_navigation(
+	await manager.navigation_policy.remediate_blocked_navigation('page-target', 'https://blocked.example/path')
+	await manager.navigation_policy.remediate_blocked_navigation(
 		'page-target',
 		'https://blocked.example/path',
 		require_target_closed=True,
@@ -210,7 +210,7 @@ async def test_strict_remediation_rechecks_closure_without_emitting_duplicate_er
 
 async def test_new_page_policy_setup_failure_closes_target_and_raises() -> None:
 	browser_session, cdp_client = _policy_session()
-	browser_session.session_manager._policy_setup_failures['page-target'] = 'Fetch unavailable'
+	browser_session.session_manager.navigation_policy.setup_failures['page-target'] = 'Fetch unavailable'
 
 	with pytest.raises(RuntimeError, match='Fetch unavailable'):
 		await browser_session.new_page('https://allowed.example/path')
@@ -241,7 +241,7 @@ async def test_fetch_router_resolves_allowed_blocked_and_subframe_requests_once(
 	_track_page(browser_session, cdp_client)
 	manager = browser_session.session_manager
 
-	await manager._handle_request_paused(
+	await manager.navigation_policy.handle_request_paused(
 		_paused_request('allowed', 'https://allowed.example/path'),
 		'page-session',
 	)
@@ -252,7 +252,7 @@ async def test_fetch_router_resolves_allowed_blocked_and_subframe_requests_once(
 	cdp_client.send.Fetch.failRequest.assert_not_awaited()
 
 	cdp_client.send.Fetch.continueRequest.reset_mock()
-	await manager._handle_request_paused(
+	await manager.navigation_policy.handle_request_paused(
 		_paused_request('subframe', 'https://blocked.example/frame', frame_id='child-frame'),
 		'page-session',
 	)
@@ -263,7 +263,7 @@ async def test_fetch_router_resolves_allowed_blocked_and_subframe_requests_once(
 	cdp_client.send.Fetch.failRequest.assert_not_awaited()
 
 	cdp_client.send.Fetch.continueRequest.reset_mock()
-	await manager._handle_request_paused(
+	await manager.navigation_policy.handle_request_paused(
 		_paused_request('blocked', 'https://blocked.example/path'),
 		'page-session',
 	)
@@ -282,10 +282,10 @@ async def test_fetch_router_closes_new_blocked_page_and_deduplicates_containment
 	browser_session, cdp_client = _policy_session()
 	_track_page(browser_session, cdp_client)
 	manager = browser_session.session_manager
-	manager._new_page_targets.add('page-target')
+	manager.navigation_policy.new_page_targets.add('page-target')
 
 	for request_id in ('blocked-1', 'blocked-2'):
-		await manager._handle_request_paused(
+		await manager.navigation_policy.handle_request_paused(
 			_paused_request(request_id, 'https://blocked.example/popup'),
 			'page-session',
 		)
@@ -300,15 +300,15 @@ async def test_fetch_router_keeps_new_page_containment_through_allowed_redirect_
 	browser_session, cdp_client = _policy_session()
 	_track_page(browser_session, cdp_client)
 	manager = browser_session.session_manager
-	manager._new_page_targets.add('page-target')
+	manager.navigation_policy.new_page_targets.add('page-target')
 
-	await manager._handle_request_paused(
+	await manager.navigation_policy.handle_request_paused(
 		_paused_request('redirect-source', 'https://allowed.example/redirect'),
 		'page-session',
 	)
-	assert 'page-target' in manager._new_page_targets
+	assert 'page-target' in manager.navigation_policy.new_page_targets
 
-	await manager._handle_request_paused(
+	await manager.navigation_policy.handle_request_paused(
 		_paused_request('redirect-destination', 'https://blocked.example/destination'),
 		'page-session',
 	)
@@ -329,7 +329,7 @@ async def test_allowed_committed_page_clears_new_page_containment_marker() -> No
 	browser_session, cdp_client = _policy_session()
 	_track_page(browser_session, cdp_client)
 	manager = browser_session.session_manager
-	manager._new_page_targets.add('page-target')
+	manager.navigation_policy.new_page_targets.add('page-target')
 
 	await manager._handle_target_info_changed(
 		{
@@ -342,7 +342,7 @@ async def test_allowed_committed_page_clears_new_page_containment_marker() -> No
 		}
 	)
 
-	assert 'page-target' not in manager._new_page_targets
+	assert 'page-target' not in manager.navigation_policy.new_page_targets
 
 
 async def test_fetch_configuration_combines_policy_and_proxy_auth() -> None:
@@ -353,8 +353,8 @@ async def test_fetch_configuration_combines_policy_and_proxy_auth() -> None:
 	browser_session.session_manager._sessions['page-session'] = cdp_session
 	browser_session.session_manager._sessions['duplicate-session'] = duplicate_session
 
-	await browser_session.session_manager._enable_fetch_for_session(cdp_session, target_type='page')
-	await browser_session.session_manager._enable_fetch_for_session(duplicate_session, target_type='page')
+	await browser_session.session_manager.navigation_policy.enable_fetch_for_session(cdp_session, target_type='page')
+	await browser_session.session_manager.navigation_policy.enable_fetch_for_session(duplicate_session, target_type='page')
 
 	cdp_client.send.Fetch.enable.assert_awaited_once_with(
 		params={
@@ -363,7 +363,7 @@ async def test_fetch_configuration_combines_policy_and_proxy_auth() -> None:
 		},
 		session_id='page-session',
 	)
-	assert browser_session.session_manager._fetch_sessions == {'page-target': 'page-session'}
+	assert browser_session.session_manager.navigation_policy.fetch_sessions == {'page-target': 'page-session'}
 
 
 async def test_fetch_owner_rebinds_when_one_of_several_target_sessions_detaches() -> None:
@@ -385,17 +385,17 @@ async def test_fetch_owner_rebinds_when_one_of_several_target_sessions_detaches(
 			'replacement-session': 'page-target',
 		}
 	)
-	manager._main_frame_ids.update(
+	manager.lifecycle._main_frame_ids.update(
 		{
 			'primary-session': 'main-frame',
 			'replacement-session': 'main-frame',
 		}
 	)
-	manager._fetch_sessions['page-target'] = 'primary-session'
+	manager.navigation_policy.fetch_sessions['page-target'] = 'primary-session'
 
 	await manager._handle_target_detached({'sessionId': 'primary-session', 'targetId': 'page-target'})
 
-	assert manager._fetch_sessions == {'page-target': 'replacement-session'}
+	assert manager.navigation_policy.fetch_sessions == {'page-target': 'replacement-session'}
 	cdp_client.send.Fetch.enable.assert_awaited_once_with(
 		params={
 			'handleAuthRequests': False,
@@ -425,7 +425,7 @@ async def test_page_attachment_fails_closed_when_policy_interception_cannot_be_i
 		}
 	)
 
-	assert 'page-target' in browser_session.session_manager._policy_setup_failures
+	assert 'page-target' in browser_session.session_manager.navigation_policy.setup_failures
 	cdp_client.send.Target.closeTarget.assert_awaited_once_with(params={'targetId': 'page-target'})
 	cdp_client.send.Runtime.runIfWaitingForDebugger.assert_not_awaited()
 
@@ -450,4 +450,4 @@ async def test_non_page_attachment_is_resumed_when_optional_fetch_setup_fails() 
 		)
 
 	cdp_client.send.Runtime.runIfWaitingForDebugger.assert_awaited_once_with(session_id='worker-session')
-	assert 'worker-target' not in browser_session.session_manager._policy_setup_failures
+	assert 'worker-target' not in browser_session.session_manager.navigation_policy.setup_failures

@@ -10,7 +10,7 @@ from cdp_use.cdp.target import TargetID
 from pydantic import BaseModel, Field, field_validator
 
 from browser_use.browser.views import BrowserStateSummary
-from browser_use.dom.views import EnhancedDOMTreeNode
+from browser_use.dom.tree import EnhancedDOMTreeNode
 
 
 def _get_timeout(env_var: str, default: float) -> float | None:

@@ -204,15 +204,25 @@ def test_removed_constructor_aliases_and_wrappers_are_absent():
 	from pydantic import ValidationError
 
 	from browser_use.actor.page import Page
-	from browser_use.agent.configuration import AgentConfiguration
+	from browser_use.agent.construction import AgentConstruction
 	from browser_use.agent.execution import AgentExecution
+	from browser_use.agent.history import AgentHistoryList
 	from browser_use.agent.history_replay import AgentHistoryReplay
 	from browser_use.agent.model_interaction import AgentModelInteraction
+	from browser_use.agent.model_settings import AgentModelSettings
+	from browser_use.agent.results import ActionResult, AgentOutput
 	from browser_use.agent.service import Agent
-	from browser_use.agent.views import ActionResult, AgentHistoryList, AgentOutput
+	from browser_use.agent.state_restoration import AgentStateRestoration
 	from browser_use.browser.profile import BrowserProfile
 	from browser_use.browser.session import BrowserSession
+	from browser_use.browser.watchdogs.security_watchdog import SecurityWatchdog
 	from browser_use.llm.base import BaseChatModel
+
+	assert not (REPOSITORY_ROOT / 'browser_use' / 'agent' / 'views.py').exists()
+	assert not (REPOSITORY_ROOT / 'browser_use' / 'agent' / 'configuration.py').exists()
+	assert not (REPOSITORY_ROOT / 'browser_use' / 'dom' / 'views.py').exists()
+
+	assert '_is_ip_address' not in SecurityWatchdog.__dict__
 
 	assert not {'browser_session', 'controller', 'skill_ids', 'skills', 'skill_service'} & set(
 		inspect.signature(Agent).parameters
@@ -237,7 +247,14 @@ def test_removed_constructor_aliases_and_wrappers_are_absent():
 	assert not hasattr(__import__('browser_use.agent.service', fromlist=['_PythonAgent']), '_PythonAgent')
 	assert all(
 		component.__module__.startswith('browser_use.agent.')
-		for component in (AgentConfiguration, AgentModelInteraction, AgentExecution, AgentHistoryReplay)
+		for component in (
+			AgentConstruction,
+			AgentModelSettings,
+			AgentStateRestoration,
+			AgentModelInteraction,
+			AgentExecution,
+			AgentHistoryReplay,
+		)
 	)
 	assert not {
 		'profile_id',
@@ -292,8 +309,17 @@ def test_removed_constructor_aliases_and_wrappers_are_absent():
 def test_browser_session_facade_contract_and_component_ownership():
 	from browser_use.browser import session as session_module
 	from browser_use.browser.event_bus import ResilientEventBus
+	from browser_use.browser.focus_recovery import FocusRecovery
+	from browser_use.browser.frame_resolver import FrameResolver
+	from browser_use.browser.lifecycle import BrowserLifecycle
+	from browser_use.browser.lifecycle_monitor import LifecycleMonitor
+	from browser_use.browser.navigation import BrowserNavigation
+	from browser_use.browser.navigation_policy import NavigationPolicy
 	from browser_use.browser.session import BrowserSession
 	from browser_use.browser.session_manager import CDPSession, SessionManager, Target
+	from browser_use.browser.watchdogs.download_tracker import DownloadTracker
+	from browser_use.browser.watchdogs.downloads_watchdog import DownloadsWatchdog
+	from browser_use.browser.watchdogs.network_downloads import NetworkDownloadMonitor
 	from browser_use.browser.watchdogs.registry import WatchdogRegistry
 	from browser_use.dom.browser_state import BrowserDomState
 
@@ -303,6 +329,7 @@ def test_browser_session_facade_contract_and_component_ownership():
 		'kill',
 		'reset',
 		'connect',
+		'reconnect',
 		'new_page',
 		'get_current_page',
 		'get_tabs',
@@ -335,12 +362,35 @@ def test_browser_session_facade_contract_and_component_ownership():
 		'remove_highlights',
 		'screenshot_element',
 		'_get_element_bounds',
+		'on_NavigateToUrlEvent',
+		'_navigate_and_wait',
+		'_get_navigation_event_url',
+		'_get_committed_navigation_url',
+		'_setup_proxy_auth',
+		'_attach_ws_drop_callback',
+		'_auto_reconnect',
+		'on_BrowserStartEvent',
+		'on_BrowserStopEvent',
+		'_finalize_session_artifacts',
 	}
 	assert not any(hasattr(BrowserSession, name) for name in removed_or_moved)
-	assert all(
+	assert all(hasattr(SessionManager, name) for name in ('get_all_pages', 'get_target_id_from_tab_id'))
+	assert not any(
 		hasattr(SessionManager, name)
-		for name in ('get_all_pages', 'get_all_frames', 'cdp_client_for_node', 'get_target_id_from_tab_id')
+		for name in ('get_all_frames', 'cdp_client_for_node', 'ensure_valid_focus', 'get_lifecycle_events')
 	)
+	assert all(hasattr(FrameResolver, name) for name in ('get_all_frames', 'cdp_client_for_node'))
+	assert hasattr(FocusRecovery, 'ensure_valid_focus')
+	assert hasattr(LifecycleMonitor, 'enable_page_monitoring')
+	assert hasattr(NavigationPolicy, 'handle_request_paused')
+	assert hasattr(BrowserNavigation, 'on_NavigateToUrlEvent')
+	assert hasattr(BrowserLifecycle, 'on_BrowserStartEvent')
+	assert not any(
+		hasattr(DownloadsWatchdog, name)
+		for name in ('attach_to_target', '_setup_network_monitoring', 'download_file_from_url', '_track_download')
+	)
+	assert hasattr(DownloadTracker, 'attach_to_target')
+	assert hasattr(NetworkDownloadMonitor, 'download_file_from_url')
 	assert all(
 		hasattr(BrowserDomState, name)
 		for name in ('get_dom_element_by_index', 'get_selector_map', 'is_file_input', 'add_highlights', 'remove_highlights')

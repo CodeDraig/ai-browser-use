@@ -84,7 +84,7 @@ async def test_cdp_proxy_auth_handler_registers_and_responds():
 
 	# Auth challenge handling is registered at the root, while SessionManager's
 	# target-scoped Fetch configuration owns request pausing.
-	await session._setup_proxy_auth()
+	await session.connection._setup_proxy_auth()
 
 	assert root.enabled is False
 	assert callable(root.auth_callback)

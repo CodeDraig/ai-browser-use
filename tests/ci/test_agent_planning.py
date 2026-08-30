@@ -6,10 +6,7 @@ disabled planning, replan nudge, flash mode schema, and edge cases.
 
 import json
 
-from browser_use.agent.views import (
-	AgentOutput,
-	PlanItem,
-)
+from browser_use.agent.results import AgentOutput, PlanItem
 from browser_use.tools.service import Tools
 
 # ---------------------------------------------------------------------------

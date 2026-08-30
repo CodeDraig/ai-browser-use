@@ -15,7 +15,7 @@ import logging
 import pytest
 from pydantic import Field
 
-from browser_use.agent.views import ActionResult
+from browser_use.agent.results import ActionResult
 from browser_use.browser import BrowserSession
 from browser_use.tools.registry.service import Registry
 from browser_use.tools.registry.views import ActionModel as BaseActionModel

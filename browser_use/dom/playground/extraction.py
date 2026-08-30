@@ -11,8 +11,8 @@ from browser_use.agent.prompts import AgentMessagePrompt
 from browser_use.browser import BrowserProfile, BrowserSession
 from browser_use.browser.events import ClickElementEvent, TypeTextEvent
 from browser_use.browser.profile import ViewportSize
+from browser_use.dom.serialized_state import DEFAULT_INCLUDE_ATTRIBUTES
 from browser_use.dom.service import DomService
-from browser_use.dom.views import DEFAULT_INCLUDE_ATTRIBUTES
 from browser_use.filesystem.file_system import FileSystem
 
 TIMEOUT = 60
@@ -112,7 +112,7 @@ async def test_focus_vs_all_elements():
 
 		website = websites[current_website_index]
 		# sleep 2
-		await browser_session._cdp_navigate(website)
+		await browser_session.cdp.navigate(website)
 		await asyncio.sleep(1)
 
 		last_clicked_index = None  # Track the index for text input

@@ -7,8 +7,9 @@ from browser_use.agent.variable_detector import (
 	_ensure_unique_name,
 	detect_variables_in_history,
 )
-from browser_use.agent.views import DetectedVariable
-from browser_use.dom.views import DOMInteractedElement, NodeType
+from browser_use.agent.variables import DetectedVariable
+from browser_use.dom.history import DOMInteractedElement
+from browser_use.dom.tree import NodeType
 
 
 def create_test_element(attributes: dict[str, str] | None = None) -> DOMInteractedElement:
@@ -24,6 +25,7 @@ def create_test_element(attributes: dict[str, str] | None = None) -> DOMInteract
 		bounds=None,
 		x_path='//*[@id="test"]',
 		element_hash=12345,
+		stable_hash=12345,
 	)
 
 

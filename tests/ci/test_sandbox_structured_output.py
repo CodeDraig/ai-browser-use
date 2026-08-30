@@ -8,8 +8,10 @@ through serialization/deserialization.
 
 from pydantic import BaseModel
 
-from browser_use.agent.views import ActionResult, AgentHistory, AgentHistoryList, BrowserStateHistory
-from browser_use.sandbox.sandbox import _parse_with_type_annotation
+from browser_use.agent.history import AgentHistory, AgentHistoryList
+from browser_use.agent.results import ActionResult
+from browser_use.browser.views import BrowserStateHistory
+from browser_use.sandbox.serialization import _parse_with_type_annotation
 
 
 class ExtractedData(BaseModel):

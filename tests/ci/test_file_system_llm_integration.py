@@ -9,9 +9,10 @@ from PIL import Image
 
 from browser_use.agent.message_manager.service import MessageManager
 from browser_use.agent.prompts import AgentMessagePrompt
-from browser_use.agent.views import ActionResult, AgentStepInfo
+from browser_use.agent.results import ActionResult
+from browser_use.agent.state import AgentStepInfo
 from browser_use.browser.views import BrowserStateSummary, TabInfo
-from browser_use.dom.views import SerializedDOMState
+from browser_use.dom.serialized_state import SerializedDOMState
 from browser_use.filesystem.file_system import FileSystem
 from browser_use.llm.messages import ContentPartImageParam, ContentPartTextParam, SystemMessage
 

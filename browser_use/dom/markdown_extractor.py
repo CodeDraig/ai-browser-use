@@ -11,9 +11,9 @@ from dataclasses import dataclass
 from enum import Enum, auto
 from typing import TYPE_CHECKING, Any
 
+from browser_use.dom.serialized_state import MarkdownChunk
 from browser_use.dom.serializer.html_serializer import HTMLSerializer
 from browser_use.dom.service import DomService
-from browser_use.dom.views import MarkdownChunk
 
 if TYPE_CHECKING:
 	from browser_use.browser.session import BrowserSession

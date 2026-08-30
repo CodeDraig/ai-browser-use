@@ -25,7 +25,7 @@ except ImportError as e:
 	sys.exit(1)
 
 from browser_use import Agent, BrowserSession, ChatOpenAI, Tools
-from browser_use.agent.views import ActionResult
+from browser_use.agent.results import ActionResult
 
 # Global Playwright browser instance - shared between custom actions
 playwright_browser: Browser | None = None

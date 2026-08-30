@@ -2,7 +2,7 @@ import json
 import logging
 from typing import TYPE_CHECKING
 
-from browser_use.agent.views import ActionResult
+from browser_use.agent.results import ActionResult
 from browser_use.browser import BrowserSession
 
 if TYPE_CHECKING:

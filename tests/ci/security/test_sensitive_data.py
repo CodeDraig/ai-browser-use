@@ -4,9 +4,11 @@ import pytest
 from pydantic import BaseModel, Field
 
 from browser_use.agent.message_manager.service import MessageManager
-from browser_use.agent.views import ActionResult, AgentOutput, AgentStepInfo, MessageManagerState
+from browser_use.agent.message_manager.views import MessageManagerState
+from browser_use.agent.results import ActionResult, AgentOutput
+from browser_use.agent.state import AgentStepInfo
 from browser_use.browser.views import BrowserStateSummary
-from browser_use.dom.views import SerializedDOMState
+from browser_use.dom.serialized_state import SerializedDOMState
 from browser_use.filesystem.file_system import FileSystem
 from browser_use.llm.messages import ContentPartTextParam, SystemMessage, UserMessage
 from browser_use.security import is_new_tab_page, match_url_with_domain_pattern
@@ -47,27 +49,27 @@ def test_replace_sensitive_data_with_missing_keys(registry, caplog):
 
 	# Case 1: All keys present - both placeholders should be replaced
 	sensitive_data = {'example.com': {'username': 'user123', 'password': 'pass456'}}
-	result = registry._replace_sensitive_data(params, sensitive_data, 'https://example.com')
+	result = registry.executor._replace_sensitive_data(params, sensitive_data, 'https://example.com')
 	assert result.text == 'Please enter user123 and pass456'
 	assert '<secret>' not in result.text  # No secret tags should remain
 
 	# Case 2: One key missing - only available key should be replaced
 	sensitive_data = {'example.com': {'username': 'user123'}}  # password is missing
-	result = registry._replace_sensitive_data(params, sensitive_data, 'https://example.com')
+	result = registry.executor._replace_sensitive_data(params, sensitive_data, 'https://example.com')
 	assert result.text == 'Please enter user123 and <secret>password</secret>'
 	assert 'user123' in result.text
 	assert '<secret>password</secret>' in result.text  # Missing key's tag remains
 
 	# Case 3: Multiple keys missing - all tags should be preserved
 	sensitive_data = {}  # both keys missing
-	result = registry._replace_sensitive_data(params, sensitive_data, 'https://example.com')
+	result = registry.executor._replace_sensitive_data(params, sensitive_data, 'https://example.com')
 	assert result.text == 'Please enter <secret>username</secret> and <secret>password</secret>'
 	assert '<secret>username</secret>' in result.text
 	assert '<secret>password</secret>' in result.text
 
 	# Case 4: One key empty - empty values are treated as missing
 	sensitive_data = {'example.com': {'username': 'user123', 'password': ''}}
-	result = registry._replace_sensitive_data(params, sensitive_data, 'https://example.com')
+	result = registry.executor._replace_sensitive_data(params, sensitive_data, 'https://example.com')
 	assert result.text == 'Please enter user123 and <secret>password</secret>'
 	assert 'user123' in result.text
 	assert '<secret>password</secret>' in result.text  # Empty value's tag remains
@@ -84,14 +86,14 @@ def test_domain_specific_sensitive_data(registry, caplog):
 	}
 
 	# Without a URL, domain-specific secrets should NOT be exposed
-	result = registry._replace_sensitive_data(params, sensitive_data)
+	result = registry.executor._replace_sensitive_data(params, sensitive_data)
 	assert result.text == 'Please enter <secret>username</secret> and <secret>password</secret>'
 	assert '<secret>username</secret>' in result.text  # Should NOT be replaced without URL
 	assert '<secret>password</secret>' in result.text  # Password is missing in sensitive_data
 	assert 'example_user' not in result.text  # Domain-specific value should not appear
 
 	# Test with a matching URL - domain-specific secrets should be exposed
-	result = registry._replace_sensitive_data(params, sensitive_data, 'https://example.com/login')
+	result = registry.executor._replace_sensitive_data(params, sensitive_data, 'https://example.com/login')
 	assert result.text == 'Please enter example_user and <secret>password</secret>'
 	assert 'example_user' in result.text  # Should be replaced with matching URL
 	assert '<secret>password</secret>' in result.text  # Password is still missing
@@ -102,9 +104,9 @@ def test_domain_specific_totp_secret_is_generated(registry, monkeypatch):
 	params = SensitiveParams(text='<secret>login_bu_2fa_code</secret>')
 	totp = Mock()
 	totp.now.return_value = '123456'
-	monkeypatch.setattr('browser_use.tools.registry.service.pyotp.TOTP', Mock(return_value=totp))
+	monkeypatch.setattr('browser_use.tools.registry.execution.pyotp.TOTP', Mock(return_value=totp))
 
-	result = registry._replace_sensitive_data(
+	result = registry.executor._replace_sensitive_data(
 		params,
 		{'example.com': {'login_bu_2fa_code': 'seed'}},
 		'https://example.com/login',
@@ -462,7 +464,7 @@ def _make_dom_node(
 	ax_value: str | None = None,
 ):
 	"""Create a minimal EnhancedDOMTreeNode for serializer testing."""
-	from browser_use.dom.views import (
+	from browser_use.dom.tree import (
 		EnhancedAXNode,
 		EnhancedAXProperty,
 		EnhancedDOMTreeNode,
@@ -521,8 +523,8 @@ def test_password_field_value_excluded_from_dom_snapshot():
 	3. Password appears in plaintext in the LLM context
 	4. Prompt injection on a later page can exfiltrate it
 	"""
-	from browser_use.dom.serializer.serializer import DOMTreeSerializer
-	from browser_use.dom.views import DEFAULT_INCLUDE_ATTRIBUTES
+	from browser_use.dom.serialized_state import DEFAULT_INCLUDE_ATTRIBUTES
+	from browser_use.dom.serializer.text_serializer import DOMTextSerializer
 
 	secret_password = 'hubble_space_telescope'
 
@@ -532,7 +534,7 @@ def test_password_field_value_excluded_from_dom_snapshot():
 		ax_value=secret_password,
 	)
 
-	attrs_str = DOMTreeSerializer._build_attributes_string(node, list(DEFAULT_INCLUDE_ATTRIBUTES), '')
+	attrs_str = DOMTextSerializer._build_attributes_string(node, list(DEFAULT_INCLUDE_ATTRIBUTES), '')
 
 	assert secret_password not in attrs_str, (
 		f'Password "{secret_password}" leaked into DOM serialization! '
@@ -547,8 +549,8 @@ def test_password_field_value_excluded_even_from_html_attributes():
 	Even if the DOM attribute 'value' is set (e.g. <input type="password" value="preset">),
 	the serializer must strip it for password fields.
 	"""
-	from browser_use.dom.serializer.serializer import DOMTreeSerializer
-	from browser_use.dom.views import DEFAULT_INCLUDE_ATTRIBUTES
+	from browser_use.dom.serialized_state import DEFAULT_INCLUDE_ATTRIBUTES
+	from browser_use.dom.serializer.text_serializer import DOMTextSerializer
 
 	preset_password = 'hubble_space_telescope'
 
@@ -558,7 +560,7 @@ def test_password_field_value_excluded_even_from_html_attributes():
 		ax_value=None,  # no AX value, but HTML attribute has it
 	)
 
-	attrs_str = DOMTreeSerializer._build_attributes_string(node, list(DEFAULT_INCLUDE_ATTRIBUTES), '')
+	attrs_str = DOMTextSerializer._build_attributes_string(node, list(DEFAULT_INCLUDE_ATTRIBUTES), '')
 
 	assert preset_password not in attrs_str, (
 		f'Preset password "{preset_password}" leaked via HTML value attribute! '
@@ -568,8 +570,8 @@ def test_password_field_value_excluded_even_from_html_attributes():
 
 def test_text_input_value_preserved():
 	"""Non-password input values should still be included."""
-	from browser_use.dom.serializer.serializer import DOMTreeSerializer
-	from browser_use.dom.views import DEFAULT_INCLUDE_ATTRIBUTES
+	from browser_use.dom.serialized_state import DEFAULT_INCLUDE_ATTRIBUTES
+	from browser_use.dom.serializer.text_serializer import DOMTextSerializer
 
 	username = 'john.doe@example.com'
 
@@ -579,7 +581,7 @@ def test_text_input_value_preserved():
 		ax_value=username,
 	)
 
-	attrs_str = DOMTreeSerializer._build_attributes_string(node, list(DEFAULT_INCLUDE_ATTRIBUTES), '')
+	attrs_str = DOMTextSerializer._build_attributes_string(node, list(DEFAULT_INCLUDE_ATTRIBUTES), '')
 
 	assert username in attrs_str, 'Non-password input values should be preserved in DOM snapshots'
 
@@ -589,8 +591,8 @@ def test_password_field_without_type_attribute():
 	An input without an explicit type attribute defaults to 'text' — its value
 	should NOT be stripped. Only explicit type="password" fields are protected.
 	"""
-	from browser_use.dom.serializer.serializer import DOMTreeSerializer
-	from browser_use.dom.views import DEFAULT_INCLUDE_ATTRIBUTES
+	from browser_use.dom.serialized_state import DEFAULT_INCLUDE_ATTRIBUTES
+	from browser_use.dom.serializer.text_serializer import DOMTextSerializer
 
 	value = 'some_text_value'
 
@@ -600,6 +602,6 @@ def test_password_field_without_type_attribute():
 		ax_value=value,
 	)
 
-	attrs_str = DOMTreeSerializer._build_attributes_string(node, list(DEFAULT_INCLUDE_ATTRIBUTES), '')
+	attrs_str = DOMTextSerializer._build_attributes_string(node, list(DEFAULT_INCLUDE_ATTRIBUTES), '')
 
 	assert value in attrs_str, 'Input without type attribute should preserve its value'

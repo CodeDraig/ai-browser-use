@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from browser_use import Agent, ChatOpenAI
-from browser_use.agent.views import AgentHistoryList
+from browser_use.agent.history import AgentHistoryList
 from browser_use.browser import BrowserProfile, BrowserSession
 from browser_use.browser.profile import ViewportSize
 
