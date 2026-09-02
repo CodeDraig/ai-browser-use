@@ -30,7 +30,7 @@ async def test_dispatch_passes_none_when_allowed_domains_omitted(server: Browser
 		captured.update(kwargs)
 		return 'ok'
 
-	server._retry_with_browser_use_agent = recording_stub  # type: ignore[method-assign]
+	server.agent_operations._retry_with_browser_use_agent = recording_stub  # type: ignore[method-assign]
 	await server._execute_tool('retry_with_browser_use_agent', {'task': 'noop'})
 
 	assert 'allowed_domains' in captured, 'dispatcher must forward the allowed_domains kwarg'
@@ -49,7 +49,7 @@ async def test_dispatch_forwards_explicit_list(server: BrowserUseServer) -> None
 		captured.update(kwargs)
 		return 'ok'
 
-	server._retry_with_browser_use_agent = recording_stub  # type: ignore[method-assign]
+	server.agent_operations._retry_with_browser_use_agent = recording_stub  # type: ignore[method-assign]
 	await server._execute_tool(
 		'retry_with_browser_use_agent',
 		{'task': 'noop', 'allowed_domains': ['example.test']},
@@ -65,7 +65,7 @@ async def test_explicit_empty_list_does_not_override_profile_defaults(server: Br
 	# We capture the resolved allowed_domains and short-circuit before LLM/agent setup.
 	captured_profile_kwargs: dict[str, Any] = {}
 
-	from browser_use.mcp import browser_operations as operations_module
+	from browser_use.mcp import agent_operations as operations_module
 
 	original_browser_profile = operations_module.BrowserProfile
 
@@ -81,7 +81,7 @@ async def test_explicit_empty_list_does_not_override_profile_defaults(server: Br
 	# but we need _retry_with_browser_use_agent to reach that point.
 	try:
 		with pytest.raises(_StopAgentSetup):
-			await server._retry_with_browser_use_agent(
+			await server.agent_operations._retry_with_browser_use_agent(
 				task='noop',
 				allowed_domains=[],
 			)

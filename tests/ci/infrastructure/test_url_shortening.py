@@ -10,14 +10,20 @@ Three focused tests:
 import json
 
 import pytest
+from pydantic import BaseModel
 
 from browser_use.agent.results import AgentOutput
 from browser_use.agent.service import Agent
+from browser_use.agent.url_shortening import AgentUrlShortener
 from browser_use.llm.messages import AssistantMessage, BaseMessage, UserMessage
 
 # Super long URL to reuse across tests - much longer than the 25 character limit
 # Includes both query params (?...) and fragment params (#...)
 SUPER_LONG_URL = 'https://documentation.example-company.com/api/v3/enterprise/user-management/endpoints/administration/create-new-user-account-with-permissions/advanced-settings?format=detailed-json&version=3.2.1&timestamp=1699123456789&session_id=abc123def456ghi789&authentication_token=very_long_authentication_token_string_here&include_metadata=true&expand_relationships=user_groups,permissions,roles&sort_by=created_at&order=desc&page_size=100&include_deprecated_fields=false&api_key=super_long_api_key_that_exceeds_normal_limits#section=user_management&tab=advanced&view=detailed&scroll_to=permissions_table&highlight=admin_settings&filter=active_users&expand_all=true&debug_mode=enabled'
+
+
+class UrlContainer(BaseModel):
+	values: list[str]
 
 
 @pytest.fixture
@@ -38,7 +44,7 @@ class TestUrlShorteningInputProcessing:
 		messages: list[BaseMessage] = [UserMessage(content=original_content)]
 
 		# Process messages (modifies messages in-place and returns URL mappings)
-		url_mappings = agent._model_interaction._process_messsages_and_replace_long_urls_shorter_ones(messages)
+		url_mappings = agent._model_interaction.url_shortener.shorten_messages(messages)
 
 		# Verify URL was shortened in the message (modified in-place)
 		processed_content = messages[0].content or ''
@@ -51,6 +57,12 @@ class TestUrlShorteningInputProcessing:
 		shortened_url = next(iter(url_mappings.keys()))
 		assert url_mappings[shortened_url] == SUPER_LONG_URL
 
+	def test_negative_limit_does_not_shorten_url_without_suffix(self):
+		shortener = AgentUrlShortener(-1)
+		text = 'Visit https://example.com/path'
+
+		assert shortener.shorten_text(text) == (text, {})
+
 	def test_process_user_and_assistant_messages_with_url_shortening(self, agent: Agent):
 		"""Test URL shortening in both UserMessage and AssistantMessage."""
 		user_content = f'I need to access {SUPER_LONG_URL} for the API documentation'
@@ -59,7 +71,7 @@ class TestUrlShorteningInputProcessing:
 		messages: list[BaseMessage] = [UserMessage(content=user_content), AssistantMessage(content=assistant_content)]
 
 		# Process messages (modifies messages in-place and returns URL mappings)
-		url_mappings = agent._model_interaction._process_messsages_and_replace_long_urls_shorter_ones(messages)
+		url_mappings = agent._model_interaction.url_shortener.shorten_messages(messages)
 
 		# Verify URL was shortened in both messages
 		user_processed_content = messages[0].content or ''
@@ -84,7 +96,7 @@ class TestUrlShorteningOutputProcessing:
 	def test_process_output_with_custom_actions_and_url_restoration(self, agent: Agent):
 		"""Test that shortened URLs in AgentOutput with custom actions are restored."""
 		# Set up URL mapping (simulating previous shortening)
-		shortened_url: str = agent._model_interaction._replace_urls_in_text(SUPER_LONG_URL)[0]
+		shortened_url: str = agent._model_interaction.url_shortener.shorten_text(SUPER_LONG_URL)[0]
 		url_mappings = {shortened_url: SUPER_LONG_URL}
 
 		# Create AgentOutput with shortened URLs using JSON parsing
@@ -103,13 +115,23 @@ class TestUrlShorteningOutputProcessing:
 		agent_output = AgentOutputWithActions.model_validate_json(json.dumps(output_json))
 
 		# Process the output to restore URLs (modifies agent_output in-place)
-		agent._model_interaction._recursive_process_all_strings_inside_pydantic_model(agent_output, url_mappings)
+		agent._model_interaction.url_shortener.restore_model_urls(agent_output, url_mappings)
 
 		# Verify URLs were restored in all locations
 		assert SUPER_LONG_URL in (agent_output.thinking or '')
 		assert SUPER_LONG_URL in (agent_output.memory or '')
 		action_data = agent_output.action[0].model_dump()
 		assert action_data['navigate']['url'] == SUPER_LONG_URL
+
+	def test_restore_preserves_existing_list_identity(self):
+		shortened_url = 'https://example.com/path?short'
+		model = UrlContainer(values=[shortened_url])
+		original_values = model.values
+
+		AgentUrlShortener.restore_model_urls(model, {shortened_url: SUPER_LONG_URL})
+
+		assert model.values is original_values
+		assert model.values == [SUPER_LONG_URL]
 
 
 class TestUrlShorteningEndToEnd:
@@ -123,7 +145,7 @@ class TestUrlShorteningEndToEnd:
 
 		messages: list[BaseMessage] = [UserMessage(content=original_content)]
 
-		url_mappings = agent._model_interaction._process_messsages_and_replace_long_urls_shorter_ones(messages)
+		url_mappings = agent._model_interaction.url_shortener.shorten_messages(messages)
 
 		# Verify URL was shortened in input
 		assert len(url_mappings) == 1
@@ -147,7 +169,7 @@ class TestUrlShorteningEndToEnd:
 		agent_output = AgentOutputWithActions.model_validate_json(json.dumps(output_json))
 
 		# Step 3: Output processing with URL restoration (modifies agent_output in-place)
-		agent._model_interaction._recursive_process_all_strings_inside_pydantic_model(agent_output, url_mappings)
+		agent._model_interaction.url_shortener.restore_model_urls(agent_output, url_mappings)
 
 		# Verify complete pipeline worked correctly
 		assert SUPER_LONG_URL in (agent_output.thinking or '')

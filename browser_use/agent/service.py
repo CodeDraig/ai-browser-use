@@ -149,7 +149,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		self._model_settings = AgentModelSettings(self)
 		self._construction = AgentConstruction(self)
 		self._state_restoration = AgentStateRestoration(self)
-		self._model_interaction = AgentModelInteraction(self)
+		self._model_interaction = AgentModelInteraction(self, _url_shortening_limit)
 		self._execution = AgentExecution(self)
 		self._history_replay = AgentHistoryReplay(self)
 		(
@@ -508,7 +508,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 			# zero steps and return with an empty history while any outer watchdog waits.
 			try:
 				await asyncio.wait_for(
-					self._execution._execute_initial_actions(),
+					self._execution.action_sequence.execute_initial_actions(),
 					timeout=self.settings.step_timeout,
 				)
 			except InterruptedError:
@@ -664,7 +664,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		**kwargs,
 	) -> list[ActionResult]:
 		"""Load and replay history, optionally substituting detected variables."""
-		return await self._history_replay.load_and_rerun(history_file, variables, **kwargs)
+		return await self._history_replay.loader.load_and_rerun(history_file, variables, **kwargs)
 
 	def save_history(self, file_path: str | Path | None = None) -> None:
 		"""Save the history to a file with sensitive data filtering"""
@@ -755,4 +755,4 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 	def detect_variables(self) -> dict[str, DetectedVariable]:
 		"""Detect reusable variables in agent history."""
-		return self._history_replay.detect_variables()
+		return self._history_replay.loader.detect_variables()

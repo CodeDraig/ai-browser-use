@@ -40,6 +40,19 @@ def test_agent_facade_contract_excludes_moved_and_skills_surfaces():
 	assert 'skill_service' not in parameters
 	for name in ('step', 'take_step', 'multi_act', 'save_file_system_state', 'log_completion'):
 		assert not hasattr(Agent, name)
+	assert not {
+		'_execute_actions',
+		'_update_plan_from_model_output',
+		'_render_plan_description',
+		'_inject_replan_nudge',
+		'_inject_exploration_nudge',
+		'_inject_loop_detection_nudge',
+		'_update_loop_detector_actions',
+		'_update_loop_detector_page_state',
+		'_log_action',
+		'_execute_initial_actions',
+	} & set(AgentExecution.__dict__)
+	assert not {'load_and_rerun', 'detect_variables'} & set(AgentHistoryReplay.__dict__)
 
 
 async def test_rerun_history_omits_failures_by_default(browser_session, mock_llm, monkeypatch):

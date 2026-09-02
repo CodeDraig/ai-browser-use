@@ -199,6 +199,74 @@ def test_default_action_protocol_order_is_stable():
 	]
 
 
+def test_default_action_adapters_do_not_mirror_actor_interactors():
+	from browser_use.browser.watchdogs.click_actions import ClickActions
+	from browser_use.browser.watchdogs.dropdown_actions import DropdownActions
+	from browser_use.browser.watchdogs.keyboard_actions import KeyboardActions
+	from browser_use.browser.watchdogs.scroll_actions import ScrollActions
+	from browser_use.browser.watchdogs.text_input_actions import TextInputActions
+
+	assert not {'is_element_occluded', 'click_element', '_click_on_coordinate'} & set(ClickActions.__dict__)
+	assert not {'type_to_page', 'character_key_info', 'key_code_for_character'} & set(KeyboardActions.__dict__)
+	assert '_input_text_element_node_impl' not in TextInputActions.__dict__
+	assert not {'_scroll_with_cdp_gesture', '_scroll_element_container'} & set(ScrollActions.__dict__)
+	assert '_handle_aria_combobox_options' not in DropdownActions.__dict__
+
+
+def test_mcp_server_does_not_mirror_operation_owners():
+	from browser_use.mcp.browser_operations import McpBrowserOperations
+	from browser_use.mcp.server import BrowserUseServer
+
+	forwarding_names = {
+		'_init_browser_session',
+		'_retry_with_browser_use_agent',
+		'_navigate',
+		'_click',
+		'_type_text',
+		'_get_browser_state',
+		'_get_html',
+		'_screenshot',
+		'_extract_content',
+		'_scroll',
+		'_go_back',
+		'_close_browser',
+		'_list_tabs',
+		'_switch_tab',
+		'_close_tab',
+		'_track_session',
+		'_update_session_activity',
+		'_list_sessions',
+		'_close_session',
+		'_close_all_sessions',
+		'_cleanup_expired_sessions',
+		'_start_cleanup_task',
+	}
+	assert not forwarding_names & set(BrowserUseServer.__dict__)
+	assert '_retry_with_browser_use_agent' not in McpBrowserOperations.__dict__
+	assert '_close_browser' not in McpBrowserOperations.__dict__
+
+
+def test_token_cost_does_not_mirror_private_owner_methods():
+	from browser_use.tokens.service import TokenCost
+
+	private_mirrors = {
+		'_pricing_model_names',
+		'_pricing_data',
+		'_initialized',
+		'_cache_dir',
+		'_load_pricing_data',
+		'_find_valid_cache',
+		'_get_cache_status',
+		'_load_from_cache',
+		'_fetch_and_cache_pricing_data',
+		'_log_usage',
+		'_build_input_tokens_display',
+		'_get_pricing_model_name',
+		'_format_tokens',
+	}
+	assert not private_mirrors & set(TokenCost.__dict__)
+
+
 def test_removed_constructor_aliases_and_wrappers_are_absent():
 	import pytest
 	from pydantic import ValidationError

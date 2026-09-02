@@ -2,14 +2,12 @@
 
 import os
 from datetime import datetime
-from pathlib import Path
-from typing import Any
 
 from dotenv import load_dotenv
 
 from browser_use.llm.base import BaseChatModel
 from browser_use.llm.views import ChatInvokeUsage
-from browser_use.tokens.accounting import UsageAccounting, format_tokens
+from browser_use.tokens.accounting import UsageAccounting
 from browser_use.tokens.pricing import PricingService
 from browser_use.tokens.views import (
 	ModelPricing,
@@ -55,47 +53,8 @@ class TokenCost:
 	def registered_llms(self) -> dict[str, BaseChatModel]:
 		return self._accounting.registered_llms
 
-	@property
-	def _pricing_model_names(self) -> dict[str, str]:
-		return self._pricing.pricing_model_names
-
-	@property
-	def _pricing_data(self) -> dict[str, Any] | None:
-		return self._pricing.pricing_data
-
-	@_pricing_data.setter
-	def _pricing_data(self, value: dict[str, Any] | None) -> None:
-		self._pricing.pricing_data = value
-
-	@property
-	def _initialized(self) -> bool:
-		return self._pricing.initialized
-
-	@_initialized.setter
-	def _initialized(self, value: bool) -> None:
-		self._pricing.initialized = value
-
-	@property
-	def _cache_dir(self) -> Path:
-		return self._pricing.cache_dir
-
 	async def initialize(self) -> None:
 		await self._pricing.initialize()
-
-	async def _load_pricing_data(self) -> None:
-		await self._pricing.load_pricing_data()
-
-	async def _find_valid_cache(self) -> Path | None:
-		return await self._pricing.find_valid_cache()
-
-	async def _get_cache_status(self, cache_file: Path) -> tuple[bool, bool]:
-		return await self._pricing.get_cache_status(cache_file)
-
-	async def _load_from_cache(self, cache_file: Path) -> None:
-		await self._pricing.load_from_cache(cache_file)
-
-	async def _fetch_and_cache_pricing_data(self) -> None:
-		await self._pricing.fetch_and_cache_pricing_data()
 
 	async def get_model_pricing(self, model_name: str) -> ModelPricing | None:
 		return await self._pricing.get_model_pricing(model_name)
@@ -106,26 +65,14 @@ class TokenCost:
 	def add_usage(self, model: str, usage: ChatInvokeUsage) -> TokenUsageEntry:
 		return self._accounting.add_usage(model, usage)
 
-	async def _log_usage(self, model: str, usage: TokenUsageEntry) -> None:
-		await self._accounting.log_usage(model, usage)
-
-	def _build_input_tokens_display(self, usage: ChatInvokeUsage, cost: TokenCostCalculated | None) -> str:
-		return self._accounting.build_input_tokens_display(usage, cost)
-
 	def register_llm(self, llm: BaseChatModel) -> BaseChatModel:
 		return self._accounting.register_llm(llm)
-
-	def _get_pricing_model_name(self, llm: BaseChatModel) -> str:
-		return self._accounting.get_pricing_model_name(llm)
 
 	def get_usage_tokens_for_model(self, model: str) -> ModelUsageTokens:
 		return self._accounting.get_usage_tokens_for_model(model)
 
 	async def get_usage_summary(self, model: str | None = None, since: datetime | None = None) -> UsageSummary:
 		return await self._accounting.get_usage_summary(model, since)
-
-	def _format_tokens(self, tokens: int) -> str:
-		return format_tokens(tokens)
 
 	async def log_usage_summary(self) -> None:
 		await self._accounting.log_usage_summary()

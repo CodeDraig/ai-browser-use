@@ -44,7 +44,7 @@ class ScrollActions:
 				is_iframe = element_node.tag_name and element_node.tag_name.upper() == 'IFRAME'
 
 				# Try to scroll the element's container
-				success = await self._scroll_element_container(element_node, pixels)
+				success = await self.scroll_interactor.scroll_element_container(element_node, pixels)
 				if success:
 					self.logger.debug(
 						f'📜 Scrolled element {index_for_logging} container {event.direction} by {event.amount} pixels'
@@ -64,7 +64,7 @@ class ScrollActions:
 					return None
 
 			# Perform target-level scroll
-			await self._scroll_with_cdp_gesture(pixels)
+			await self.scroll_interactor.scroll_with_cdp_gesture(pixels)
 
 			# Note: We don't clear cached state here - let multi_act handle DOM change detection
 			# by explicitly rebuilding and comparing when needed
@@ -75,12 +75,6 @@ class ScrollActions:
 			return None
 		except Exception as e:
 			raise
-
-	async def _scroll_with_cdp_gesture(self, pixels: int) -> bool:
-		return await self.scroll_interactor.scroll_with_cdp_gesture(pixels)
-
-	async def _scroll_element_container(self, element_node, pixels: int) -> bool:
-		return await self.scroll_interactor.scroll_element_container(element_node, pixels)
 
 	async def handle_scroll_to_text(self, event: ScrollToTextEvent) -> None:
 		await self.scroll_interactor.scroll_to_text(event.text)

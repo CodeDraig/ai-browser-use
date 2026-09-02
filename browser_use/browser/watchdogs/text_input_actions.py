@@ -6,7 +6,6 @@ from browser_use.actor.text import TextInteractor
 from browser_use.browser.events import TypeTextEvent
 from browser_use.browser.watchdogs.click_actions import ClickActions
 from browser_use.browser.watchdogs.keyboard_actions import KeyboardActions
-from browser_use.dom.service import EnhancedDOMTreeNode
 
 
 class TextInputActions:
@@ -39,7 +38,7 @@ class TextInputActions:
 			# Check if this is index 0 or a falsy index - type to the page (whatever has focus)
 			if not element_node.backend_node_id or element_node.backend_node_id == 0:
 				# Type to the page without focusing any specific element
-				await self.keyboard_actions.type_to_page(event.text)
+				await self.keyboard_actions.keyboard_interactor.type_to_page(event.text)
 				# Log with sensitive data protection
 				if event.is_sensitive:
 					if event.sensitive_key_name:
@@ -52,7 +51,7 @@ class TextInputActions:
 			else:
 				try:
 					# Try to type to the specific element
-					input_metadata = await self._input_text_element_node_impl(
+					input_metadata = await self.text_interactor.input_text(
 						element_node,
 						event.text,
 						clear=event.clear or (not event.text),
@@ -72,10 +71,10 @@ class TextInputActions:
 					# Element not found or error - fall back to typing to the page
 					self.logger.warning(f'Failed to type to element {index_for_logging}: {e}. Falling back to page typing.')
 					try:
-						await asyncio.wait_for(self.click_actions.click_element(element_node), timeout=10.0)
+						await asyncio.wait_for(self.click_actions.element_interactor.click_element(element_node), timeout=10.0)
 					except Exception as e:
 						self.logger.debug(f'Fallback click for page typing failed: {e}')
-					await self.keyboard_actions.type_to_page(event.text)
+					await self.keyboard_actions.keyboard_interactor.type_to_page(event.text)
 					# Log with sensitive data protection
 					if event.is_sensitive:
 						if event.sensitive_key_name:
@@ -90,12 +89,3 @@ class TextInputActions:
 			# by explicitly rebuilding and comparing when needed
 		except Exception as e:
 			raise
-
-	async def _input_text_element_node_impl(
-		self,
-		element_node: EnhancedDOMTreeNode,
-		text: str,
-		clear: bool = True,
-		is_sensitive: bool = False,
-	) -> dict | None:
-		return await self.text_interactor.input_text(element_node, text, clear=clear, is_sensitive=is_sensitive)

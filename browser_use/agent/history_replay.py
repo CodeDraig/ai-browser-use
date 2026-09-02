@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from browser_use.agent.history import AgentHistory, AgentHistoryList
@@ -11,7 +10,6 @@ from browser_use.agent.history_loader import HistoryLoader
 from browser_use.agent.replay_matching import ReplayElementMatcher
 from browser_use.agent.replay_retry import ReplayRetryPolicy
 from browser_use.agent.results import ActionResult
-from browser_use.agent.variables import DetectedVariable
 from browser_use.browser.views import BrowserStateSummary
 from browser_use.llm.base import BaseChatModel
 from browser_use.llm.messages import BaseMessage, UserMessage
@@ -629,14 +627,3 @@ class AgentHistoryReplay:
 		except Exception as e:
 			self.agent.logger.warning(f'Failed to re-open dropdown: {e}')
 			return False
-
-	async def load_and_rerun(
-		self,
-		history_file: str | Path | None = None,
-		variables: dict[str, str] | None = None,
-		**kwargs,
-	) -> list[ActionResult]:
-		return await self.loader.load_and_rerun(history_file, variables, **kwargs)
-
-	def detect_variables(self) -> dict[str, DetectedVariable]:
-		return self.loader.detect_variables()

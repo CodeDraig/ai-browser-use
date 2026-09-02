@@ -345,7 +345,9 @@ class ClickActions:
 					self.logger.warning('⚠️ PDF generation failed, falling back to regular click')
 
 			# Execute click with automatic download detection
-			click_metadata = await self._execute_click_with_download_detection(self.click_element(element_node))
+			click_metadata = await self._execute_click_with_download_detection(
+				self.element_interactor.click_element(element_node)
+			)
 
 			# Check for validation errors
 			if isinstance(click_metadata, dict) and 'validation_error' in click_metadata:
@@ -376,7 +378,7 @@ class ClickActions:
 			if event.force:
 				self.logger.debug(f'Force clicking at coordinates ({event.coordinate_x}, {event.coordinate_y})')
 				return await self._execute_click_with_download_detection(
-					self._click_on_coordinate(event.coordinate_x, event.coordinate_y, force=True)
+					self.element_interactor.click_coordinate(event.coordinate_x, event.coordinate_y, force=True)
 				)
 
 			# Get element at coordinates for safety checks
@@ -389,7 +391,7 @@ class ClickActions:
 					f'No element found at coordinates ({event.coordinate_x}, {event.coordinate_y}), proceeding with click anyway'
 				)
 				return await self._execute_click_with_download_detection(
-					self._click_on_coordinate(event.coordinate_x, event.coordinate_y, force=False)
+					self.element_interactor.click_coordinate(event.coordinate_x, event.coordinate_y, force=False)
 				)
 
 			# Safety check: file input
@@ -421,17 +423,8 @@ class ClickActions:
 
 			# All safety checks passed, click at coordinates (with download detection)
 			return await self._execute_click_with_download_detection(
-				self._click_on_coordinate(event.coordinate_x, event.coordinate_y, force=False)
+				self.element_interactor.click_coordinate(event.coordinate_x, event.coordinate_y, force=False)
 			)
 
 		except Exception:
 			raise
-
-	async def is_element_occluded(self, backend_node_id: int, x: float, y: float, cdp_session) -> bool:
-		return await self.element_interactor.is_element_occluded(backend_node_id, x, y, cdp_session)
-
-	async def click_element(self, element_node) -> dict | None:
-		return await self.element_interactor.click_element(element_node)
-
-	async def _click_on_coordinate(self, coordinate_x: int, coordinate_y: int, force: bool = False) -> dict | None:
-		return await self.element_interactor.click_coordinate(coordinate_x, coordinate_y, force=force)

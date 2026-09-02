@@ -4,8 +4,9 @@ import base64
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
+from browser_use.agent.results import JudgementResult
 from browser_use.llm.messages import (
 	BaseMessage,
 	ContentPartImageParam,
@@ -15,7 +16,67 @@ from browser_use.llm.messages import (
 	UserMessage,
 )
 
+if TYPE_CHECKING:
+	from browser_use.agent.service import Agent
+
 logger = logging.getLogger(__name__)
+
+
+class AgentJudge:
+	"""Evaluate a completed agent trace and attach the verdict to its final result."""
+
+	def __init__(self, agent: 'Agent') -> None:
+		self.agent = agent
+
+	async def judge_trace(self) -> JudgementResult | None:
+		input_messages = construct_judge_messages(
+			task=self.agent.task,
+			final_result=self.agent.history.final_result() or '',
+			agent_steps=self.agent.history.agent_steps(),
+			screenshot_paths=[path for path in self.agent.history.screenshot_paths() if path is not None],
+			max_images=10,
+			ground_truth=self.agent.settings.ground_truth,
+			use_vision=self.agent.settings.use_vision,
+		)
+		kwargs: dict = {'output_format': JudgementResult}
+		if self.agent.judge_llm.provider == 'browser-use':
+			kwargs['request_type'] = 'judge'
+			kwargs['session_id'] = self.agent.session_id
+
+		try:
+			response = await self.agent.judge_llm.ainvoke(input_messages, **kwargs)
+			return response.completion  # type: ignore[return-value]
+		except Exception as error:
+			self.agent.logger.error(f'Judge trace failed: {error}')
+			return None
+
+	async def judge_and_log(self) -> None:
+		"""Attach a judge verdict without overriding the agent's self-reported success."""
+		judgement = await self.judge_trace()
+		if not self.agent.history.history[-1].result[-1].is_done:
+			return
+
+		last_result = self.agent.history.history[-1].result[-1]
+		last_result.judgement = judgement
+		if not judgement or (last_result.success is True and judgement.verdict is True):
+			return
+
+		judge_log = '\n'
+		if last_result.success is True and judgement.verdict is False:
+			judge_log += '⚠️  \033[33mAgent reported success but judge thinks task failed\033[0m\n'
+
+		verdict_color = '\033[32m' if judgement.verdict else '\033[31m'
+		verdict_text = '✅ PASS' if judgement.verdict else '❌ FAIL'
+		judge_log += f'⚖️  {verdict_color}Judge Verdict: {verdict_text}\033[0m\n'
+		if judgement.failure_reason:
+			judge_log += f'   Failure Reason: {judgement.failure_reason}\n'
+		if judgement.reached_captcha:
+			self.agent.logger.warning(
+				'Agent was blocked by a captcha. Cloud browsers include stealth fingerprinting and proxy rotation to avoid this.\n'
+				'         Try: Browser(use_cloud=True)  |  Get an API key: https://cloud.browser-use.com?utm_source=oss&utm_medium=captcha_nudge'
+			)
+		judge_log += f'   {judgement.reasoning}\n'
+		self.agent.logger.info(judge_log)
 
 
 def _encode_image(image_path: str) -> str | None:

@@ -18,17 +18,5 @@ class DropdownActions:
 	async def handle_get_dropdown_options(self, event: GetDropdownOptionsEvent) -> dict[str, str]:
 		return await self.dropdown_interactor.get_options(event.node)
 
-	async def _handle_aria_combobox_options(
-		self,
-		cdp_session,
-		object_id: str,
-		combobox_info: dict,
-		index_for_logging: int,
-		backend_node_id: int,
-	) -> dict[str, str]:
-		return await self.dropdown_interactor._handle_aria_combobox_options(
-			cdp_session, object_id, combobox_info, index_for_logging, backend_node_id
-		)
-
 	async def handle_select_dropdown_option(self, event: SelectDropdownOptionEvent) -> dict[str, str]:
 		return await self.dropdown_interactor.select_option(event.node, event.text)

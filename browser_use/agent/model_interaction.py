@@ -7,19 +7,17 @@ import re
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from pydantic import BaseModel, ValidationError
+from pydantic import ValidationError
 
-from browser_use.agent.judge import construct_judge_messages
+from browser_use.agent.judge import AgentJudge
 from browser_use.agent.message_manager.utils import save_conversation
-from browser_use.agent.results import AgentOutput, JudgementResult
+from browser_use.agent.results import AgentOutput
 from browser_use.agent.state import AgentStepInfo
-from browser_use.agent.url_detection import (
-	substitute_url_candidates,
-)
+from browser_use.agent.url_shortening import AgentUrlShortener
 from browser_use.browser.views import BrowserStateSummary
 from browser_use.llm.base import BaseChatModel
 from browser_use.llm.exceptions import ModelOutputTruncatedError, ModelProviderError, ModelRateLimitError
-from browser_use.llm.messages import BaseMessage, ContentPartTextParam, UserMessage
+from browser_use.llm.messages import BaseMessage, UserMessage
 from browser_use.logging_utils import time_execution_async
 
 if TYPE_CHECKING:
@@ -31,8 +29,10 @@ logger = logging.getLogger(__name__)
 class AgentModelInteraction:
 	"""Owns model interaction behavior for an Agent."""
 
-	def __init__(self, agent: Agent) -> None:
+	def __init__(self, agent: Agent, url_shortening_limit: int) -> None:
 		self.agent = agent
+		self.judge = AgentJudge(agent)
+		self.url_shortener = AgentUrlShortener(url_shortening_limit)
 
 	def _log_response(self, response: AgentOutput) -> None:
 		"""Log the model response beside the interaction that produced it."""
@@ -92,82 +92,6 @@ class AgentModelInteraction:
 
 		# check again if Ctrl+C was pressed before we commit the output to history
 		await self.agent._execution._check_stop_or_pause()
-
-	async def _judge_trace(self) -> JudgementResult | None:
-		"""Judge the trace of the agent"""
-		task = self.agent.task
-		final_result = self.agent.history.final_result() or ''
-		agent_steps = self.agent.history.agent_steps()
-		screenshot_paths = [p for p in self.agent.history.screenshot_paths() if p is not None]
-
-		# Construct input messages for judge evaluation
-		input_messages = construct_judge_messages(
-			task=task,
-			final_result=final_result,
-			agent_steps=agent_steps,
-			screenshot_paths=screenshot_paths,
-			max_images=10,
-			ground_truth=self.agent.settings.ground_truth,
-			use_vision=self.agent.settings.use_vision,
-		)
-
-		# Call LLM with JudgementResult as output format
-		kwargs: dict = {'output_format': JudgementResult}
-
-		# Only pass request_type for ChatBrowserUse (other providers don't support it)
-		if self.agent.judge_llm.provider == 'browser-use':
-			kwargs['request_type'] = 'judge'
-			kwargs['session_id'] = self.agent.session_id
-
-		try:
-			response = await self.agent.judge_llm.ainvoke(input_messages, **kwargs)
-			judgement: JudgementResult = response.completion  # type: ignore[assignment]
-			return judgement
-		except Exception as e:
-			self.agent.logger.error(f'Judge trace failed: {e}')
-			# Return a default judgement on failure
-			return None
-
-	async def _judge_and_log(self) -> None:
-		"""Run judge evaluation and log the verdict.
-
-		The judge verdict is attached to the action result but does NOT override
-		last_result.success, which remains the agent's self-report.
-		"""
-		judgement = await self._judge_trace()
-
-		# Attach judgement to last action result
-		if self.agent.history.history[-1].result[-1].is_done:
-			last_result = self.agent.history.history[-1].result[-1]
-			last_result.judgement = judgement
-
-			# Get self-reported success
-			self_reported_success = last_result.success
-
-			# Log the verdict based on self-reported success and judge verdict
-			if judgement:
-				# If both self-reported and judge agree on success, don't log
-				if self_reported_success is True and judgement.verdict is True:
-					return
-
-				judge_log = '\n'
-				# If agent reported success but judge thinks it failed, show warning
-				if self_reported_success is True and judgement.verdict is False:
-					judge_log += '⚠️  \033[33mAgent reported success but judge thinks task failed\033[0m\n'
-
-				# Otherwise, show full judge result
-				verdict_color = '\033[32m' if judgement.verdict else '\033[31m'
-				verdict_text = '✅ PASS' if judgement.verdict else '❌ FAIL'
-				judge_log += f'⚖️  {verdict_color}Judge Verdict: {verdict_text}\033[0m\n'
-				if judgement.failure_reason:
-					judge_log += f'   Failure Reason: {judgement.failure_reason}\n'
-				if judgement.reached_captcha:
-					self.agent.logger.warning(
-						'Agent was blocked by a captcha. Cloud browsers include stealth fingerprinting and proxy rotation to avoid this.\n'
-						'         Try: Browser(use_cloud=True)  |  Get an API key: https://cloud.browser-use.com?utm_source=oss&utm_medium=captcha_nudge'
-					)
-				judge_log += f'   {judgement.reasoning}\n'
-				self.agent.logger.info(judge_log)
 
 	async def _get_model_output_with_retry(self, input_messages: list[BaseMessage]) -> AgentOutput:
 		"""Get model output with retry logic for empty actions"""
@@ -247,159 +171,11 @@ class AgentModelInteraction:
 		text = re.sub(STRAY_CLOSE_TAG, '', text)
 		return text.strip()
 
-	def _replace_urls_in_text(self, text: str) -> tuple[str, dict[str, str]]:
-		"""Replace URLs in a text string"""
-
-		replaced_urls: dict[str, str] = {}
-
-		def replace_url(match: re.Match) -> str:
-			"""Url can only have 1 query and 1 fragment"""
-			import hashlib
-
-			original_url = match.group(0)
-
-			# Find where the query/fragment starts
-			query_start = original_url.find('?')
-			fragment_start = original_url.find('#')
-
-			# Find the earliest position of query or fragment
-			after_path_start = len(original_url)  # Default: no query/fragment
-			if query_start != -1:
-				after_path_start = min(after_path_start, query_start)
-			if fragment_start != -1:
-				after_path_start = min(after_path_start, fragment_start)
-
-			# Split URL into base (up to path) and after_path (query + fragment)
-			base_url = original_url[:after_path_start]
-			after_path = original_url[after_path_start:]
-
-			# If after_path is within the limit, don't shorten
-			if len(after_path) <= self.agent._url_shortening_limit:
-				return original_url
-
-			# If after_path is too long, truncate and add hash
-			if after_path:
-				truncated_after_path = after_path[: self.agent._url_shortening_limit]
-				# Create a short hash of the full after_path content
-				hash_obj = hashlib.md5(after_path.encode('utf-8'))
-				short_hash = hash_obj.hexdigest()[:7]
-				# Create shortened URL
-				shortened = f'{base_url}{truncated_after_path}...{short_hash}'
-				# Only use shortened URL if it's actually shorter than the original
-				if len(shortened) < len(original_url):
-					replaced_urls[shortened] = original_url
-					return shortened
-
-			return original_url
-
-		return substitute_url_candidates(text, replace_url), replaced_urls
-
-	def _process_messsages_and_replace_long_urls_shorter_ones(self, input_messages: list[BaseMessage]) -> dict[str, str]:
-		"""Replace long URLs with shorter ones
-		? @dev edits input_messages in place
-
-		returns:
-			tuple[filtered_input_messages, urls we replaced {shorter_url: original_url}]
-		"""
-		from browser_use.llm.messages import AssistantMessage, UserMessage
-
-		urls_replaced: dict[str, str] = {}
-
-		# Process each message, in place
-		for message in input_messages:
-			# no need to process SystemMessage, we have control over that anyway
-			if isinstance(message, (UserMessage, AssistantMessage)):
-				if isinstance(message.content, str):
-					# Simple string content
-					message.content, replaced_urls = self._replace_urls_in_text(message.content)
-					urls_replaced.update(replaced_urls)
-
-				elif isinstance(message.content, list):
-					# List of content parts
-					for part in message.content:
-						if isinstance(part, ContentPartTextParam):
-							part.text, replaced_urls = self._replace_urls_in_text(part.text)
-							urls_replaced.update(replaced_urls)
-
-		return urls_replaced
-
-	@staticmethod
-	def _recursive_process_all_strings_inside_pydantic_model(model: BaseModel, url_replacements: dict[str, str]) -> None:
-		"""Recursively process all strings inside a Pydantic model, replacing shortened URLs with originals in place."""
-		for field_name, field_value in model.__dict__.items():
-			if isinstance(field_value, str):
-				# Replace shortened URLs with original URLs in string
-				processed_string = AgentModelInteraction._replace_shortened_urls_in_string(field_value, url_replacements)
-				setattr(model, field_name, processed_string)
-			elif isinstance(field_value, BaseModel):
-				# Recursively process nested Pydantic models
-				AgentModelInteraction._recursive_process_all_strings_inside_pydantic_model(field_value, url_replacements)
-			elif isinstance(field_value, dict):
-				# Process dictionary values in place
-				AgentModelInteraction._recursive_process_dict(field_value, url_replacements)
-			elif isinstance(field_value, (list, tuple)):
-				processed_value = AgentModelInteraction._recursive_process_list_or_tuple(field_value, url_replacements)
-				setattr(model, field_name, processed_value)
-
-	@staticmethod
-	def _recursive_process_dict(dictionary: dict, url_replacements: dict[str, str]) -> None:
-		"""Helper method to process dictionaries."""
-		for k, v in dictionary.items():
-			if isinstance(v, str):
-				dictionary[k] = AgentModelInteraction._replace_shortened_urls_in_string(v, url_replacements)
-			elif isinstance(v, BaseModel):
-				AgentModelInteraction._recursive_process_all_strings_inside_pydantic_model(v, url_replacements)
-			elif isinstance(v, dict):
-				AgentModelInteraction._recursive_process_dict(v, url_replacements)
-			elif isinstance(v, (list, tuple)):
-				dictionary[k] = AgentModelInteraction._recursive_process_list_or_tuple(v, url_replacements)
-
-	@staticmethod
-	def _recursive_process_list_or_tuple(container: list | tuple, url_replacements: dict[str, str]) -> list | tuple:
-		"""Helper method to process lists and tuples."""
-		if isinstance(container, tuple):
-			# For tuples, create a new tuple with processed items
-			processed_items = []
-			for item in container:
-				if isinstance(item, str):
-					processed_items.append(AgentModelInteraction._replace_shortened_urls_in_string(item, url_replacements))
-				elif isinstance(item, BaseModel):
-					AgentModelInteraction._recursive_process_all_strings_inside_pydantic_model(item, url_replacements)
-					processed_items.append(item)
-				elif isinstance(item, dict):
-					AgentModelInteraction._recursive_process_dict(item, url_replacements)
-					processed_items.append(item)
-				elif isinstance(item, (list, tuple)):
-					processed_items.append(AgentModelInteraction._recursive_process_list_or_tuple(item, url_replacements))
-				else:
-					processed_items.append(item)
-			return tuple(processed_items)
-		else:
-			# For lists, modify in place
-			for i, item in enumerate(container):
-				if isinstance(item, str):
-					container[i] = AgentModelInteraction._replace_shortened_urls_in_string(item, url_replacements)
-				elif isinstance(item, BaseModel):
-					AgentModelInteraction._recursive_process_all_strings_inside_pydantic_model(item, url_replacements)
-				elif isinstance(item, dict):
-					AgentModelInteraction._recursive_process_dict(item, url_replacements)
-				elif isinstance(item, (list, tuple)):
-					container[i] = AgentModelInteraction._recursive_process_list_or_tuple(item, url_replacements)
-			return container
-
-	@staticmethod
-	def _replace_shortened_urls_in_string(text: str, url_replacements: dict[str, str]) -> str:
-		"""Replace all shortened URLs in a string with their original URLs."""
-		result = text
-		for shortened_url, original_url in url_replacements.items():
-			result = result.replace(shortened_url, original_url)
-		return result
-
 	@time_execution_async('--get_next_action')
 	async def get_model_output(self, input_messages: list[BaseMessage]) -> AgentOutput:
 		"""Get next action from LLM based on current state"""
 
-		urls_replaced = self._process_messsages_and_replace_long_urls_shorter_ones(input_messages)
+		urls_replaced = self.url_shortener.shorten_messages(input_messages)
 
 		# Build kwargs for ainvoke
 		# Note: ChatBrowserUse will automatically generate action descriptions from output_format schema
@@ -411,7 +187,7 @@ class AgentModelInteraction:
 
 			# Replace any shortened URLs in the LLM response back to original URLs
 			if urls_replaced:
-				self._recursive_process_all_strings_inside_pydantic_model(parsed, urls_replaced)
+				self.url_shortener.restore_model_urls(parsed, urls_replaced)
 
 			# cut the number of actions to max_actions_per_step if needed
 			if len(parsed.action) > self.agent.settings.max_actions_per_step:

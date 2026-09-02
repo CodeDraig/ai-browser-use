@@ -136,7 +136,7 @@ class AgentExecution:
 
 			# Phase 2: Get model output and execute actions
 			await self.agent._model_interaction._get_next_action(browser_state_summary)
-			await self._execute_actions()
+			await self.action_sequence.execute_actions()
 
 			# Phase 3: Post-processing
 			await self._post_process()
@@ -183,7 +183,7 @@ class AgentExecution:
 		self.agent.logger.debug(f'💬 Step {self.agent.state.n_steps}: Creating state messages for context...')
 
 		# Render plan description for injection into agent context
-		plan_description = self._render_plan_description()
+		plan_description = self.planning.render_plan_description()
 
 		self.agent._message_manager.prepare_step_state(
 			browser_state_summary=browser_state_summary,
@@ -209,16 +209,13 @@ class AgentExecution:
 		)
 
 		await self._inject_budget_warning(step_info)
-		self._inject_replan_nudge()
-		self._inject_exploration_nudge()
-		self._update_loop_detector_page_state(browser_state_summary)
-		self._inject_loop_detection_nudge()
+		self.planning.inject_replan_nudge()
+		self.planning.inject_exploration_nudge()
+		self.planning.update_loop_detector_page_state(browser_state_summary)
+		self.planning.inject_loop_detection_nudge()
 		await self._force_done_after_last_step(step_info)
 		await self._force_done_after_failure()
 		return browser_state_summary
-
-	async def _execute_actions(self) -> None:
-		await self.action_sequence.execute_actions()
 
 	async def _post_process(self) -> None:
 		"""Handle post-action processing like download tracking and result logging"""
@@ -229,10 +226,10 @@ class AgentExecution:
 
 		# Update plan state from model output
 		if self.agent.state.last_model_output is not None:
-			self._update_plan_from_model_output(self.agent.state.last_model_output)
+			self.planning.update_plan_from_model_output(self.agent.state.last_model_output)
 
 		# Record executed actions for loop detection
-		self._update_loop_detector_actions()
+		self.planning.update_loop_detector_actions()
 
 		# check for action errors - only count single-action steps toward consecutive failures;
 		# multi-action steps with errors are handled by loop detection and replan nudges instead
@@ -406,27 +403,6 @@ class AgentExecution:
 
 		# Increment step counter after step is fully completed
 		self.agent.state.n_steps += 1
-
-	def _update_plan_from_model_output(self, model_output: AgentOutput) -> None:
-		self.planning.update_plan_from_model_output(model_output)
-
-	def _render_plan_description(self) -> str | None:
-		return self.planning.render_plan_description()
-
-	def _inject_replan_nudge(self) -> None:
-		self.planning.inject_replan_nudge()
-
-	def _inject_exploration_nudge(self) -> None:
-		self.planning.inject_exploration_nudge()
-
-	def _inject_loop_detection_nudge(self) -> None:
-		self.planning.inject_loop_detection_nudge()
-
-	def _update_loop_detector_actions(self) -> None:
-		self.planning.update_loop_detector_actions()
-
-	def _update_loop_detector_page_state(self, browser_state_summary: BrowserStateSummary) -> None:
-		self.planning.update_loop_detector_page_state(browser_state_summary)
 
 	async def _inject_budget_warning(self, step_info: AgentStepInfo | None = None) -> None:
 		"""Inject a prominent budget warning when the agent has used >= 75% of its step budget.
@@ -628,7 +604,7 @@ class AgentExecution:
 
 			# Run full judge before done callback if enabled
 			if self.agent.settings.use_judge:
-				await self.agent._model_interaction._judge_and_log()
+				await self.agent._model_interaction.judge.judge_and_log()
 
 			if self.agent.register_done_callback:
 				if inspect.iscoroutinefunction(self.agent.register_done_callback):
@@ -642,10 +618,8 @@ class AgentExecution:
 
 	@time_execution_async('--multi_act')
 	async def multi_act(self, actions: list[ActionModel]) -> list[ActionResult]:
+		"""Execute an action batch with the existing timing boundary."""
 		return await self.action_sequence.multi_act(actions)
-
-	async def _log_action(self, action, action_name: str, action_num: int, total_actions: int) -> None:
-		await self.action_sequence._log_action(action, action_name, action_num, total_actions)
 
 	async def log_completion(self) -> None:
 		"""Log the completion of the task"""
@@ -654,6 +628,3 @@ class AgentExecution:
 		if self.agent.history.is_successful():
 			self.agent.logger.info('✅ Task completed successfully')
 			await self._demo_mode_log('Task completed successfully', 'success', {'tag': 'task'})
-
-	async def _execute_initial_actions(self) -> None:
-		await self.action_sequence.execute_initial_actions()
