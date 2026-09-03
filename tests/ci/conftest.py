@@ -40,8 +40,6 @@ def setup_test_environment():
 	original_env = {}
 	test_env_vars = {
 		'SKIP_LLM_API_KEY_VERIFICATION': 'true',
-		'BROWSER_USE_CLOUD_API_URL': 'http://placeholder-will-be-replaced-by-specific-test-fixtures',
-		'BROWSER_USE_CLOUD_UI_URL': 'http://placeholder-will-be-replaced-by-specific-test-fixtures',
 		# Let the current configuration use the default ~/.config/browseruse location.
 	}
 

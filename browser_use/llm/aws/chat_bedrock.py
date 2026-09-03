@@ -66,9 +66,7 @@ class ChatAWSBedrock(BaseChatModel):
 		try:
 			from boto3 import client as AwsClient  # type: ignore
 		except ImportError:
-			raise ImportError(
-				'`boto3` not installed. Please install using `pip install browser-use[aws] or pip install browser-use[all]`'
-			)
+			raise ImportError('`boto3` is not installed. Enable the `aws` extra for this Browser Use source installation.')
 
 		if self.session:
 			return self.session.client('bedrock-runtime')
@@ -168,9 +166,7 @@ class ChatAWSBedrock(BaseChatModel):
 		try:
 			from botocore.exceptions import ClientError  # type: ignore
 		except ImportError:
-			raise ImportError(
-				'`boto3` not installed. Please install using `pip install browser-use[aws] or pip install browser-use[all]`'
-			)
+			raise ImportError('`boto3` is not installed. Enable the `aws` extra for this Browser Use source installation.')
 
 		bedrock_messages, system_message = AWSBedrockMessageSerializer.serialize_messages(messages)
 

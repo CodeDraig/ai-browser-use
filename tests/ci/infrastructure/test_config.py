@@ -136,7 +136,7 @@ def test_current_profile_fields_aliases_and_storage_metadata_are_valid(tmp_path:
 						'id': 'profile',
 						'default': True,
 						'created_at': '2026-01-01T00:00:00',
-						'use_cloud': True,
+						'headless': True,
 						'window_size': {'width': 1440, 'height': 900},
 						'browser_binary_path': '/current/browser',
 					}
@@ -149,7 +149,7 @@ def test_current_profile_fields_aliases_and_storage_metadata_are_valid(tmp_path:
 	)
 
 	loaded = load_config_file(config_path)
-	assert loaded.browser_profile['profile'].use_cloud is True  # type: ignore[attr-defined]
+	assert loaded.browser_profile['profile'].headless is True  # type: ignore[attr-defined]
 	monkeypatch.setenv('BROWSER_USE_CONFIG_PATH', str(config_path))
 	runtime_profile = load_browser_use_config()['browser_profile']
 	assert runtime_profile['window_size'] == {'width': 1440, 'height': 900}
@@ -194,12 +194,12 @@ def test_browser_profile_rejects_every_unknown_keyword(kwargs: dict[str, object]
 
 def test_browser_profile_accepts_current_fields_and_aliases():
 	profile = BrowserProfile(
-		use_cloud=True,
+		headless=False,
 		window_size={'width': 1440, 'height': 900},
 		browser_binary_path='/current/browser',  # type: ignore[call-arg]
 	)
 
-	assert profile.use_cloud is True
+	assert profile.headless is False
 	assert profile.window_size is not None
 	assert profile.window_size.model_dump() == {'width': 1440, 'height': 900}
 	assert str(profile.executable_path) == '/current/browser'

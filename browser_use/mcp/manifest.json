@@ -7,24 +7,23 @@
   "description": "AI-powered browser automation that lets Claude control web browsers to complete tasks autonomously",
   "long_description": "Browser-Use is a powerful extension that enables Claude to control real web browsers through an AI agent. It can navigate websites, fill forms, extract data, and perform complex multi-step tasks autonomously. Perfect for web scraping, testing, research, and automation workflows.\n\n### Key Features:\n- **Autonomous AI Agent**: High-level task execution with minimal supervision\n- **Direct Browser Control**: Navigate, click, type, and interact with any website\n- **Content Extraction**: Smart extraction of structured data from web pages\n- **Tab Management**: Handle multiple tabs and complex workflows\n- **Vision Capabilities**: Use screenshots for visual understanding\n- **Security Features**: Domain restrictions and sandboxed execution\n\n### Use Cases:\n- Web scraping and data extraction\n- Automated testing and QA\n- Research and information gathering\n- Form filling and submissions\n- Multi-step workflow automation",
   "icon": "icon.png",
-  "homepage": "https://browser-use.com",
-  "documentation": "https://docs.browser-use.com",
+  "homepage": "https://github.com/CodeDraig/ai-browser-use",
+  "documentation": "https://github.com/CodeDraig/ai-browser-use/tree/main/docs",
   "repository": {
     "type": "git",
-    "url": "https://github.com/browser-use/browser-use"
+    "url": "https://github.com/CodeDraig/ai-browser-use"
   },
-  "support": "https://github.com/browser-use/browser-use/issues",
+  "support": "https://github.com/CodeDraig/ai-browser-use/issues",
   "author": {
     "name": "Browser-Use Team",
-    "email": "support@browser-use.com",
-    "url": "https://browser-use.com"
+    "url": "https://github.com/browser-use"
   },
   "server": {
     "type": "python",
     "entry_point": "python",
     "mcp_config": {
-      "command": "uvx",
-      "args": ["browser-use", "--mcp"],
+      "command": "browser-use",
+      "args": ["--mcp"],
       "env": {
         "OPENAI_API_KEY": "${user_config.openai_api_key}",
         "ANTHROPIC_API_KEY": "${user_config.anthropic_api_key}",

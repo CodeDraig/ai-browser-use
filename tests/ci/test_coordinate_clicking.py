@@ -1,6 +1,6 @@
 """Tests for coordinate clicking feature.
 
-This feature allows certain models (Claude Sonnet 4, Claude Opus 4, Gemini 3 Pro, browser-use/* models)
+This feature allows certain models (Claude Sonnet 4, Claude Opus 4, Gemini 3 Pro)
 to use coordinate-based clicking, while other models only get index-based clicking.
 """
 
@@ -113,7 +113,7 @@ class TestCoordinateClickingModelDetection:
 	@pytest.mark.parametrize(
 		'model_name,expected_coords',
 		[
-			# Models that SHOULD have coordinate clicking (claude-sonnet-4*, claude-opus-4*, gemini-3-pro*, browser-use/*)
+			# Models that SHOULD have coordinate clicking (claude-sonnet-4*, claude-opus-4*, gemini-3-pro*)
 			('claude-sonnet-4-5', True),
 			('claude-sonnet-4-5-20250101', True),
 			('claude-sonnet-4-0', True),
@@ -124,8 +124,6 @@ class TestCoordinateClickingModelDetection:
 			('claude-opus-4', True),
 			('gemini-3-pro-preview', True),
 			('gemini-3-pro', True),
-			('browser-use/fast', True),
-			('browser-use/accurate', True),
 			('CLAUDE-SONNET-4-5', True),  # Case insensitive
 			('CLAUDE-SONNET-4', True),  # Case insensitive
 			('GEMINI-3-PRO', True),  # Case insensitive
@@ -143,9 +141,7 @@ class TestCoordinateClickingModelDetection:
 	def test_model_detection_patterns(self, model_name: str, expected_coords: bool):
 		"""Test that the model detection patterns correctly identify coordinate-capable models."""
 		model_lower = model_name.lower()
-		supports_coords = any(
-			pattern in model_lower for pattern in ['claude-sonnet-4', 'claude-opus-4', 'gemini-3-pro', 'browser-use/']
-		)
+		supports_coords = any(pattern in model_lower for pattern in ['claude-sonnet-4', 'claude-opus-4', 'gemini-3-pro'])
 		assert supports_coords == expected_coords, f'Model {model_name}: expected {expected_coords}, got {supports_coords}'
 
 

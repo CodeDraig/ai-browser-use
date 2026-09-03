@@ -3,7 +3,7 @@ from pathlib import Path
 
 from browser_use import Agent, Browser, ChatOpenAI
 
-# NOTE: To use this example, install imageio[ffmpeg], e.g. with uv pip install "browser-use[video]"
+# NOTE: To use this example, enable the `video` extra on this Browser Use source installation.
 
 
 async def main():

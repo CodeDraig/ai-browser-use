@@ -64,7 +64,7 @@ Only output the country name, no numbers, no punctuation, just the name."""
 		models.append(oci_model)
 		print(f'✅ OCI model added to test: {oci_model.name}')
 	else:
-		print('ℹ️  OCI model not available (install with pip install browser-use[oci] and configure credentials)')
+		print('ℹ️  OCI model not available (enable the `oci` extra on this Browser Use installation and configure credentials)')
 
 	print('\n🌍 Iterative Country Generation Test')
 	print('=' * 80)

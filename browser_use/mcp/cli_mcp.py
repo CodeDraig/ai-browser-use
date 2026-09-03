@@ -18,9 +18,7 @@ from mcp.server.models import InitializationOptions
 from browser_use.version import get_browser_use_version
 
 _NAMESPACE_IMPORTS = (
-	'from browser_harness.admin import ('
-	'daemon_alive, ensure_daemon, restart_daemon, start_remote_daemon, stop_remote_daemon)\n'
-	'from browser_harness.helpers import *\n'
+	'from browser_harness.admin import daemon_alive, ensure_daemon, restart_daemon\nfrom browser_harness.helpers import *\n'
 )
 
 
@@ -107,10 +105,8 @@ class CLIMCPServer:
 		return self._namespace
 
 	def _ensure_daemon(self, code: str) -> None:
-		"""Mirror run.py: daemon must be up before helpers run, except for cloud admin snippets."""
+		"""Mirror run.py: the daemon must be up before helpers run."""
 		ns = self._ensure_namespace()
-		if code.lstrip().startswith(('start_remote_daemon(', 'stop_remote_daemon(')):
-			return
 		ns['ensure_daemon']()
 
 	def _execute(self, code: str, connect: bool = True) -> str:

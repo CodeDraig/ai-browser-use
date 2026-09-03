@@ -58,7 +58,6 @@ if TYPE_CHECKING:
 	from browser_use.llm.aws.chat_anthropic import ChatAnthropicBedrock
 	from browser_use.llm.aws.chat_bedrock import ChatAWSBedrock
 	from browser_use.llm.azure.chat import ChatAzureOpenAI
-	from browser_use.llm.browser_use.chat import ChatBrowserUse
 	from browser_use.llm.cerebras.chat import ChatCerebras
 	from browser_use.llm.deepseek.chat import ChatDeepSeek
 	from browser_use.llm.google.chat import ChatGoogle
@@ -70,7 +69,6 @@ if TYPE_CHECKING:
 	from browser_use.llm.openai.chat import ChatOpenAI
 	from browser_use.llm.openrouter.chat import ChatOpenRouter
 	from browser_use.llm.vercel.chat import ChatVercel
-	from browser_use.sandbox import sandbox
 	from browser_use.tools.registry.views import ActionModel
 	from browser_use.tools.service import Tools
 
@@ -97,7 +95,6 @@ _LAZY_IMPORTS = {
 	'ChatAnthropic': ('browser_use.llm.anthropic.chat', 'ChatAnthropic'),
 	'ChatAnthropicBedrock': ('browser_use.llm.aws.chat_anthropic', 'ChatAnthropicBedrock'),
 	'ChatAWSBedrock': ('browser_use.llm.aws.chat_bedrock', 'ChatAWSBedrock'),
-	'ChatBrowserUse': ('browser_use.llm.browser_use.chat', 'ChatBrowserUse'),
 	'ChatCerebras': ('browser_use.llm.cerebras.chat', 'ChatCerebras'),
 	'ChatDeepSeek': ('browser_use.llm.deepseek.chat', 'ChatDeepSeek'),
 	'ChatGroq': ('browser_use.llm.groq.chat', 'ChatGroq'),
@@ -110,8 +107,6 @@ _LAZY_IMPORTS = {
 	'ChatVercel': ('browser_use.llm.vercel.chat', 'ChatVercel'),
 	# LLM models module
 	'models': ('browser_use.llm.models', None),
-	# Sandbox execution
-	'sandbox': ('browser_use.sandbox', 'sandbox'),
 }
 
 
@@ -153,7 +148,6 @@ __all__ = [
 	'ChatAnthropic',
 	'ChatAnthropicBedrock',
 	'ChatAWSBedrock',
-	'ChatBrowserUse',
 	'ChatCerebras',
 	'ChatDeepSeek',
 	'ChatGroq',
@@ -167,6 +161,4 @@ __all__ = [
 	'Tools',
 	# LLM models module
 	'models',
-	# Sandbox execution
-	'sandbox',
 ]

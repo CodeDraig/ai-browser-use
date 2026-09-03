@@ -1,5 +1,5 @@
-name: Find pip install command for browser-use
-task: Find the pip installation command for the browser-use repo
+name: Find install command for this browser-use fork
+task: Find the uv installation command for this browser-use fork
 judge_context:
-  - The output must include the command ('pip install browser-use') 
+  - The output must include the CodeDraig/ai-browser-use VCS package source
 max_steps: 10

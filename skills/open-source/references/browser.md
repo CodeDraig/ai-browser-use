@@ -5,21 +5,21 @@
 - [All Parameters](#all-parameters)
 - [Authentication Strategies](#authentication-strategies)
 - [Real Browser Connection](#real-browser-connection)
-- [Remote / Cloud Browser](#remote--cloud-browser)
+- [Remote Browser](#remote-browser)
 
 ---
 
 ## Basic Usage
 
 ```python
-from browser_use import Agent, Browser, ChatBrowserUse
+from browser_use import Agent, Browser, ChatOpenAI
 
 browser = Browser(
     headless=False,
     window_size={'width': 1000, 'height': 700},
 )
 
-agent = Agent(task='Search for Browser Use', browser=browser, llm=ChatBrowserUse())
+agent = Agent(task='Search for Browser Use', browser=browser, llm=ChatOpenAI(model="gpt-4.1-mini"))
 await agent.run()
 ```
 
@@ -208,23 +208,7 @@ Close Chrome completely before running.
 
 ---
 
-## Remote / Cloud Browser
-
-### Browser-Use Cloud (Recommended)
-
-```python
-# Simple
-browser = Browser(use_cloud=True)
-
-# Advanced — bypasses captchas, geo-restrictions
-browser = Browser(
-    cloud_profile_id='your-profile-id',
-    cloud_proxy_country_code='us',  # us, uk, fr, it, jp, au, de, fi, ca, in
-    cloud_timeout=30,               # minutes (free: 15, paid: 240)
-)
-```
-
-**Prereqs:** `BROWSER_USE_API_KEY` env var from https://cloud.browser-use.com/new-api-key
+## Remote Browser
 
 ### CDP URL (Any Provider)
 

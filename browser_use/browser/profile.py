@@ -11,7 +11,6 @@ from urllib.parse import urlparse
 
 from pydantic import AfterValidator, AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from browser_use.browser.cloud.views import CreateBrowserRequest
 from browser_use.browser.extensions import ExtensionManager
 from browser_use.browser.profile_runtime import configure_display, copy_browser_profile
 from browser_use.config import get_environment_config
@@ -19,36 +18,17 @@ from browser_use.logging_utils import log_pretty_path
 
 logger = logging.getLogger(__name__)
 
-# The cloud service applies its default proxy only when this argument is omitted.
-CLOUD_PROXY_UNSET: Any = object()
-
 
 def resolve_browser_profile(
 	*,
 	browser_profile: 'BrowserProfile | None',
 	cdp_url: str | None,
-	cloud_profile_id: Any,
-	cloud_proxy_country_code: Any,
-	cloud_timeout: int | None,
 	profile_kwargs: dict[str, Any],
 ) -> 'BrowserProfile':
 	"""Resolve direct BrowserSession arguments into one current BrowserProfile."""
-	if cloud_profile_id is not None or cloud_proxy_country_code is not CLOUD_PROXY_UNSET or cloud_timeout is not None:
-		cloud_kwargs: dict[str, Any] = {}
-		if cloud_profile_id is not None:
-			cloud_kwargs['cloud_profile_id'] = cloud_profile_id
-		if cloud_proxy_country_code is not CLOUD_PROXY_UNSET:
-			cloud_kwargs['cloud_proxy_country_code'] = cloud_proxy_country_code
-		if cloud_timeout is not None:
-			cloud_kwargs['cloud_timeout'] = cloud_timeout
-		profile_kwargs['cloud_browser_params'] = CreateBrowserRequest(**cloud_kwargs)
-		profile_kwargs['use_cloud'] = True
-
-	if profile_kwargs.get('cloud_browser_params') is not None:
-		profile_kwargs['use_cloud'] = True
 	if profile_kwargs.get('is_local') is False and profile_kwargs.get('executable_path') is not None:
 		profile_kwargs['is_local'] = True
-	if not cdp_url and not profile_kwargs.get('use_cloud'):
+	if not cdp_url:
 		profile_kwargs['is_local'] = True
 
 	if browser_profile is None:
@@ -605,15 +585,6 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 	# Session/connection configuration
 	cdp_url: str | None = Field(default=None, description='CDP URL for connecting to existing browser instance')
 	is_local: bool = Field(default=False, description='Whether this is a local browser instance')
-	use_cloud: bool = Field(
-		default=False,
-		description='Use browser-use cloud browser service instead of local browser',
-	)
-
-	cloud_browser_params: CreateBrowserRequest | None = Field(
-		default=None, description='Parameters for creating a cloud browser instance'
-	)
-
 	# custom options we provide that aren't native playwright kwargs
 	disable_security: bool = Field(default=False, description='Disable browser security features.')
 	deterministic_rendering: bool = Field(default=False, description='Enable deterministic rendering flags.')
@@ -640,10 +611,6 @@ class BrowserProfile(BrowserConnectArgs, BrowserLaunchPersistentContextArgs, Bro
 	enable_default_extensions: bool = Field(
 		default_factory=_get_enable_default_extensions_default,
 		description="Enable automation-optimized extensions: ad blocking (uBlock Origin), cookie handling (I still don't care about cookies), and URL cleaning (ClearURLs). All extensions work automatically without manual intervention. Extensions are automatically downloaded and loaded when enabled. Can be disabled via BROWSER_USE_DISABLE_EXTENSIONS=1 environment variable.",
-	)
-	captcha_solver: bool = Field(
-		default=True,
-		description='Enable the captcha solver watchdog that listens for captcha events from the browser proxy. Automatically pauses agent steps while a CAPTCHA is being solved. Only active when the browser emits BrowserUse CDP events (e.g. Browser Use cloud browsers). Harmless when disabled or when events are not emitted.',
 	)
 	demo_mode: bool = Field(
 		default=False,

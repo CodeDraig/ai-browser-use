@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import sys
-from contextlib import redirect_stderr, redirect_stdout
 from importlib.metadata import PackageNotFoundError, version
 from io import StringIO
 
@@ -66,7 +65,7 @@ def _run_install_command(argv: list[str]) -> int:
 	result = subprocess.run(cmd)
 	if result.returncode == 0:
 		print('\nInstallation complete.')
-		print('Ready to use. Run: uvx browser-use')
+		print('Ready to use. Run: browser-use')
 		return 0
 
 	print('\nInstallation failed', file=sys.stderr)
@@ -96,45 +95,11 @@ def _as_browser_use_cli_text(text: str) -> str:
 	return text.replace('Browser Harness', 'Browser Use').replace('browser-harness', 'browser-use')
 
 
-def _normalize_captured_cli_output(func, argv: list[str]) -> int:
-	stdout = StringIO()
-	stderr = StringIO()
-	try:
-		with redirect_stdout(stdout), redirect_stderr(stderr):
-			result = func(argv)
-	except SystemExit as exc:
-		result = exc.code
-
-	out = stdout.getvalue()
-	err = stderr.getvalue()
-	if out:
-		print(_as_browser_use_cli_text(out), end='')
-	if err:
-		print(_as_browser_use_cli_text(err), end='', file=sys.stderr)
-	if result is None:
-		return 0
-	if isinstance(result, int):
-		return result
-	if isinstance(result, str):
-		print(_as_browser_use_cli_text(result), file=sys.stderr)
-		return 1
-	return 1
-
-
 def _patch_browser_harness_cli_text() -> None:
-	from browser_harness import auth, run
+	from browser_harness import run
 
 	run.HELP = _as_browser_use_cli_text(run.HELP)
 	run.USAGE = _as_browser_use_cli_text(run.USAGE)
-
-	original_auth_cli = auth.run_auth_cli
-
-	def run_auth_cli(argv: list[str]) -> int:
-		if any(arg in {'-h', '--help'} for arg in argv):
-			return _normalize_captured_cli_output(original_auth_cli, argv)
-		return original_auth_cli(argv)
-
-	auth.run_auth_cli = run_auth_cli
 
 
 def _run_browser_harness() -> int | None:
@@ -160,10 +125,10 @@ _CLI3_GUIDE = """Core helpers: new_tab(url), goto_url(url), page_info(), capture
   list_tabs(), switch_tab(target), close_tab(target)
 
 Read the full interface now:   browser-use skill show
-Install the CLI 3.0 skill (upgrades the CLI and replaces any pre-existing browser-use skill):
+Install or refresh the bundled CLI 3.0 skill:
                                browser-use skill install
-Then load the freshly installed browser-use skill, and follow it to use the latest CLI.
-Skill reference:               https://github.com/browser-use/browser-use/blob/main/browser_use/skills/browser-use/SKILL.md
+Then load the freshly installed browser-use skill, and follow it to use this CLI.
+Skill reference:               https://github.com/CodeDraig/ai-browser-use/blob/main/browser_use/skills/browser-use/SKILL.md
 Health check:                  browser-use --doctor"""
 
 
@@ -217,15 +182,14 @@ Recommended: install the skill so your coding agent remembers this:
 
 You can also paste this into your agent to get started:
 
-  Install or upgrade browser-use to the latest stable version with uv using
-  Python 3.12, register the skill from `browser-use skill`, and connect it to
-  my browser. Follow https://github.com/browser-use/browser-use if setup or
+  Register the bundled skill with `browser-use skill install`, then connect it
+  to my browser. Follow https://github.com/CodeDraig/ai-browser-use if setup or
   connection fails.
 
 More:
   browser-use --doctor     check install, daemon, and browser health
   browser-use --help       full command list
-  docs: https://github.com/browser-use/browser-use/blob/main/browser_use/skills/browser-use/SKILL.md"""
+  docs: https://github.com/CodeDraig/ai-browser-use/blob/main/browser_use/skills/browser-use/SKILL.md"""
 
 _EMPTY_STDIN_MESSAGE = """browser-use received empty stdin. This CLI executes Python piped on stdin:
   browser-use <<'PY'

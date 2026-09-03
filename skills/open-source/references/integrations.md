@@ -1,83 +1,16 @@
-# Integrations (MCP and Docs)
+# Local MCP Integration
 
 ## Table of Contents
-- [MCP Server (Cloud)](#mcp-server-cloud)
-- [MCP Server (Local)](#mcp-server-local)
-- [Documentation MCP](#documentation-mcp)
+- [MCP Server](#mcp-server)
 
 ---
 
-## MCP Server (Cloud)
-
-HTTP-based MCP server at `https://api.browser-use.com/mcp`
-
-### Setup
-
-**Claude Code:**
-```bash
-claude mcp add --transport http browser-use https://api.browser-use.com/mcp
-```
-
-**Claude Desktop** (macOS `~/Library/Application Support/Claude/claude_desktop_config.json`):
-```json
-{
-  "mcpServers": {
-    "browser-use": {
-      "type": "http",
-      "url": "https://api.browser-use.com/mcp",
-      "headers": { "x-browser-use-api-key": "your-api-key" }
-    }
-  }
-}
-```
-
-**Cursor** (`~/.cursor/mcp.json`):
-```json
-{
-  "mcpServers": {
-    "browser-use": {
-      "type": "http",
-      "url": "https://api.browser-use.com/mcp",
-      "headers": { "x-browser-use-api-key": "your-api-key" }
-    }
-  }
-}
-```
-
-**Windsurf** (`~/.codeium/windsurf/mcp_config.json`):
-```json
-{
-  "mcpServers": {
-    "browser-use": {
-      "type": "http",
-      "url": "https://api.browser-use.com/mcp",
-      "headers": { "x-browser-use-api-key": "your-api-key" }
-    }
-  }
-}
-```
-
-### Cloud MCP Tools
-
-| Tool | Cost | Description |
-|------|------|-------------|
-| `browser_task` | $0.01 + per-step | Run browser automation task |
-| `execute_skill` | $0.02 | Execute a skill |
-| `list_skills` | Free | List available skills |
-| `get_cookies` | Free | Get cookies |
-| `list_browser_profiles` | Free | List cloud profiles |
-| `monitor_task` | Free | Check task progress |
-
-`browser_task` params: `task` (required), `max_steps` (1-10, default 8), `profile_id` (UUID)
-
----
-
-## MCP Server (Local)
+## MCP Server
 
 Free, self-hosted stdio-based server:
 
 ```bash
-uvx --from 'browser-use[cli]' browser-use --mcp
+browser-use --mcp
 ```
 
 ### Claude Desktop Config
@@ -87,8 +20,8 @@ macOS (`~/Library/Application Support/Claude/claude_desktop_config.json`):
 {
   "mcpServers": {
     "browser-use": {
-      "command": "/Users/your-username/.local/bin/uvx",
-      "args": ["--from", "browser-use[cli]", "browser-use", "--mcp"],
+      "command": "/absolute/path/to/browser-use",
+      "args": ["--mcp"],
       "env": {
         "OPENAI_API_KEY": "your-key"
       }
@@ -97,7 +30,7 @@ macOS (`~/Library/Application Support/Claude/claude_desktop_config.json`):
 }
 ```
 
-Note: Use full path to `uvx` on macOS/Linux (run `which uvx` to find it).
+Note: If the MCP client does not inherit your shell PATH, use the full path reported by `which browser-use`.
 
 ### Local MCP Tools
 
@@ -132,8 +65,8 @@ from mcp.client.stdio import stdio_client
 
 async def use_browser_mcp():
     server_params = StdioServerParameters(
-        command="uvx",
-        args=["--from", "browser-use[cli]", "browser-use", "--mcp"]
+        command="browser-use",
+        args=["--mcp"]
     )
     async with stdio_client(server_params) as (read, write):
         async with ClientSession(read, write) as session:
@@ -142,23 +75,3 @@ async def use_browser_mcp():
 ```
 
 ---
-
-## Documentation MCP
-
-Read-only docs access (no browser automation):
-
-**Claude Code:**
-```bash
-claude mcp add --transport http browser-use-docs https://docs.browser-use.com/mcp
-```
-
-**Cursor** (`~/.cursor/mcp.json`):
-```json
-{
-  "mcpServers": {
-    "browser-use-docs": { "url": "https://docs.browser-use.com/mcp" }
-  }
-}
-```
-
-No API key needed. Provides API reference, config options, best practices, examples.

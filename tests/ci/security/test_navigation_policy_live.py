@@ -80,7 +80,6 @@ async def test_top_level_policy_blocks_all_page_driven_navigation_before_destina
 			user_data_dir=None,
 			keep_alive=True,
 			enable_default_extensions=False,
-			captcha_solver=False,
 			allowed_domains=['http://127.0.0.1'],
 		)
 	)
@@ -179,7 +178,6 @@ async def test_new_page_url_is_policy_gated_before_any_destination_request(navig
 			user_data_dir=None,
 			keep_alive=True,
 			enable_default_extensions=False,
-			captcha_solver=False,
 			allowed_domains=['http://127.0.0.1'],
 		)
 	)

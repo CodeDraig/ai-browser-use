@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
 	from browser_use.browser.session import BrowserSession
 	from browser_use.browser.watchdogs.aboutblank_watchdog import AboutBlankWatchdog
-	from browser_use.browser.watchdogs.captcha_watchdog import CaptchaWatchdog
 	from browser_use.browser.watchdogs.default_action_watchdog import DefaultActionWatchdog
 	from browser_use.browser.watchdogs.dom_watchdog import DOMWatchdog
 	from browser_use.browser.watchdogs.downloads_watchdog import DownloadsWatchdog
@@ -38,7 +37,6 @@ class WatchdogRegistry:
 		self.screenshot: ScreenshotWatchdog | None = None
 		self.permissions: PermissionsWatchdog | None = None
 		self.recording: RecordingWatchdog | None = None
-		self.captcha: CaptchaWatchdog | None = None
 		self.popups: PopupsWatchdog | None = None
 		self.har_recording: HarRecordingWatchdog | None = None
 
@@ -60,7 +58,6 @@ class WatchdogRegistry:
 		self.screenshot = None
 		self.permissions = None
 		self.recording = None
-		self.captcha = None
 		self.popups = None
 		self.har_recording = None
 
@@ -80,7 +77,6 @@ class WatchdogRegistry:
 			return
 
 		from browser_use.browser.watchdogs.aboutblank_watchdog import AboutBlankWatchdog
-		from browser_use.browser.watchdogs.captcha_watchdog import CaptchaWatchdog
 
 		# from browser_use.browser.crash_watchdog import CrashWatchdog
 		from browser_use.browser.watchdogs.default_action_watchdog import DefaultActionWatchdog
@@ -215,12 +211,6 @@ class WatchdogRegistry:
 				event_bus=self.browser_session.event_bus, browser_session=self.browser_session
 			)
 			self.har_recording.attach_to_session()
-
-		# Initialize CaptchaWatchdog (listens for captcha solver events from the browser proxy)
-		if self.browser_session.browser_profile.captcha_solver:
-			CaptchaWatchdog.model_rebuild()
-			self.captcha = CaptchaWatchdog(event_bus=self.browser_session.event_bus, browser_session=self.browser_session)
-			self.captcha.attach_to_session()
 
 		# Mark watchdogs as attached to prevent duplicate attachment
 		self._attached = True

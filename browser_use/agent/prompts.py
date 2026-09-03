@@ -34,14 +34,12 @@ class SystemPrompt:
 		use_thinking: bool = True,
 		flash_mode: bool = False,
 		is_anthropic: bool = False,
-		is_browser_use_model: bool = False,
 		model_name: str | None = None,
 	):
 		self.max_actions_per_step = max_actions_per_step
 		self.use_thinking = use_thinking
 		self.flash_mode = flash_mode
 		self.is_anthropic = is_anthropic
-		self.is_browser_use_model = is_browser_use_model
 		self.model_name = model_name
 		# Check if this is an Anthropic 4.5 model that needs longer prompts for caching
 		self.is_anthropic_4_5 = _is_anthropic_4_5_model(model_name)
@@ -60,17 +58,9 @@ class SystemPrompt:
 	def _load_prompt_template(self) -> None:
 		"""Load the prompt template from the markdown file."""
 		try:
-			# Choose the appropriate template based on model type and mode
-			# Browser-use models use simplified prompts optimized for fine-tuned models
-			if self.is_browser_use_model:
-				if self.flash_mode:
-					template_filename = 'system_prompt_browser_use_flash.md'
-				elif self.use_thinking:
-					template_filename = 'system_prompt_browser_use.md'
-				else:
-					template_filename = 'system_prompt_browser_use_no_thinking.md'
-			# Anthropic 4.5 models (Opus 4.5, Haiku 4.5) need 4096+ token prompts for caching
-			elif self.is_anthropic_4_5 and self.flash_mode:
+			# Choose the appropriate template based on model type and mode.
+			# Anthropic 4.5 models (Opus 4.5, Haiku 4.5) need 4096+ token prompts for caching.
+			if self.is_anthropic_4_5 and self.flash_mode:
 				template_filename = 'system_prompt_anthropic_flash.md'
 			elif self.flash_mode and self.is_anthropic:
 				template_filename = 'system_prompt_flash_anthropic.md'

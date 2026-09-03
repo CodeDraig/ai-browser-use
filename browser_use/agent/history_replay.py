@@ -83,8 +83,7 @@ class AgentHistoryReplay:
 				self.agent.logger.debug(f'LLM response type: {type(summary)}')
 				self.agent.logger.debug(f'LLM response: {summary}')
 			except Exception as structured_error:
-				# If structured output fails (e.g., Browser-Use LLM doesn't support it for this type),
-				# fall back to text response without parsing
+				# If structured output fails, fall back to text response without parsing.
 				self.agent.logger.debug(f'Structured output failed: {structured_error}, falling back to text response')
 
 				response = await summary_llm.ainvoke(messages, None)

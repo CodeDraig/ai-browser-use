@@ -465,8 +465,8 @@ class AgentHistoryList(BaseModel, Generic[AgentStructuredOutput]):
 	def get_structured_output(self, output_model: type[AgentStructuredOutput]) -> AgentStructuredOutput | None:
 		"""Get the structured output from history, parsing with the provided schema.
 
-		Use this method when accessing structured output from sandbox execution,
-		since the _output_model_schema private attribute is not preserved during serialization.
+		Use this method when the caller has the output model type but the history
+		object no longer retains its private schema attribute.
 
 		Args:
 			output_model: The Pydantic model class to parse the output with

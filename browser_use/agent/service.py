@@ -40,12 +40,10 @@ from browser_use.agent.state_restoration import AgentStateRestoration
 from browser_use.agent.variables import DetectedVariable
 from browser_use.browser.events import _get_timeout
 from browser_use.browser.views import BrowserStateHistory, BrowserStateSummary
-from browser_use.config import get_environment_config
 from browser_use.logging_utils import log_pretty_path, time_execution_async, time_execution_sync
 from browser_use.runtime import SignalHandler
 from browser_use.security import SensitiveData, warn_sensitive_data_domain_constraints
 from browser_use.tools.service import Tools
-from browser_use.version import check_latest_browser_use_version
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +83,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		# Initial agent run parameters
 		sensitive_data: SensitiveData | None = None,
 		initial_actions: list[dict[str, dict[str, Any]]] | None = None,
-		# Cloud Callbacks
+		# Lifecycle callbacks
 		register_new_step_callback: (
 			Callable[[BrowserStateSummary, AgentOutput, int], None]  # Sync callback
 			| Callable[[BrowserStateSummary, AgentOutput, int], Awaitable[None]]  # Async callback
@@ -195,8 +193,7 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		# Per-page extract uses a schema only when the caller explicitly asks for one.
 		# It must NOT inherit output_model_schema: that describes the final task result
 		# (e.g. {summary, step_results}), which is the wrong shape for a single-page
-		# extraction and, on the browser-use gateway, routes extract into the agent
-		# action protocol and breaks it.
+		# extraction.
 		self.extraction_schema = extraction_schema
 
 		# Core components - task enhancement now has access to output_model_schema from tools
@@ -411,14 +408,6 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 
 		self.logger.debug(f'🤖 Browser-Use Library Version {self.version} ({self.source})')
 
-		# Check for latest version and log upgrade message if needed
-		if get_environment_config().BROWSER_USE_VERSION_CHECK:
-			latest_version = await check_latest_browser_use_version()
-			if latest_version and latest_version != self.version:
-				self.logger.info(
-					f'📦 Newer version available: {latest_version} (current: {self.version}). Upgrade with: uv add browser-use=={latest_version}'
-				)
-
 	def _log_first_step_startup(self) -> None:
 		"""Log startup message only on the first step"""
 		if len(self.history.history) == 0:
@@ -432,24 +421,10 @@ class Agent(Generic[Context, AgentStructuredOutput]):
 		is_successful = self.history.is_successful()
 
 		if is_successful is False or is_successful is None:
-			# Get final result to check for specific failure reasons
-			final_result = self.history.final_result()
-			final_result_str = str(final_result).lower() if final_result else ''
-
-			# Check for captcha/cloudflare related failures
-			captcha_keywords = ['captcha', 'cloudflare', 'recaptcha', 'challenge', 'bot detection', 'access denied']
-			has_captcha_issue = any(keyword in final_result_str for keyword in captcha_keywords)
-
-			if has_captcha_issue:
-				self.logger.warning(
-					'Agent was blocked by a captcha. Cloud browsers include stealth fingerprinting and proxy rotation to avoid this.\n'
-					'         Try: Browser(use_cloud=True)  |  Get an API key: https://cloud.browser-use.com?utm_source=oss&utm_medium=captcha_nudge'
-				)
-
 			# General failure message
 			self.logger.info('')
 			self.logger.info('Did the Agent not work as expected? Let us fix this!')
-			self.logger.info('   Open a short issue on GitHub: https://github.com/browser-use/browser-use/issues')
+			self.logger.info('   Open a short issue on GitHub: https://github.com/CodeDraig/ai-browser-use/issues')
 
 	@time_execution_async('--run')
 	async def run(

@@ -19,9 +19,9 @@ def test_url_candidate_sanitization_removes_task_prose_suffixes():
 
 
 def test_url_candidate_iteration_and_substitution_share_one_pattern():
-	text = 'Visit example.com and then https://browser-use.com/docs.'
+	text = 'Visit example.com and then https://example.org/docs.'
 	matches = [match.group(0) for match in iter_url_candidate_matches(text)]
-	assert matches == ['example.com', 'https://browser-use.com/docs.']
+	assert matches == ['example.com', 'https://example.org/docs.']
 	assert substitute_url_candidates(text, lambda match: f'<{match.group(0)}>') == (
-		'Visit <example.com> and then <https://browser-use.com/docs.>'
+		'Visit <example.com> and then <https://example.org/docs.>'
 	)

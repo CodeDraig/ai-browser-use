@@ -14,11 +14,11 @@
 ## Basic Usage
 
 ```python
-from browser_use import Agent, ChatBrowserUse
+from browser_use import Agent, ChatOpenAI
 
 agent = Agent(
     task="Search for latest news about AI",
-    llm=ChatBrowserUse(),
+    llm=ChatOpenAI(model="gpt-4.1-mini"),
 )
 
 async def main():

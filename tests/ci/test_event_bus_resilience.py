@@ -57,7 +57,7 @@ def test_browser_session_uses_resilient_event_bus():
 @pytest.mark.parametrize('lifecycle_method', ['stop', 'kill'])
 async def test_lifecycle_reset_renews_bus_with_one_core_handler_set(lifecycle_method: str):
 	"""A stopped session must remain startable through its fresh event bus."""
-	session = BrowserSession(browser_profile=BrowserProfile(user_data_dir=None, keep_alive=False, captcha_solver=False))
+	session = BrowserSession(browser_profile=BrowserProfile(user_data_dir=None, keep_alive=False))
 	original_bus = session.event_bus
 
 	await getattr(session, lifecycle_method)()

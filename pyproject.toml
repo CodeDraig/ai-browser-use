@@ -41,11 +41,9 @@ dependencies = [
     "cdp-use==1.4.5",
     "pyotp==2.9.0",
     "pillow==12.3.0",
-    "cloudpickle==3.1.2",
     "markdownify==1.2.2",
     "python-docx==1.2.0",
-    "browser-use-sdk==3.4.2",
-    "browser-harness==0.1.9",
+    "websockets==15.0.1",
 ]
 # google-api-core: only used for Google LLM APIs
 # pyperclip: only used for examples that use copy/paste
@@ -75,8 +73,15 @@ eval = [
     "psutil==7.2.2",
     "datamodel-code-generator==0.53.0",
 ]
-cli-oci = ["browser-use[cli,oci]"]
-all = ["browser-use[cli,examples,aws,oci]"]
+cli-oci = ["oci==2.166.0"]
+all = [
+    "agentmail==0.0.59",
+    "boto3==1.42.37",
+    "botocore==1.42.37",
+    "imgcat==0.6.0",
+    "langchain-openai==1.1.7",
+    "oci==2.166.0",
+]
 
 # will prefer to use local source code checked out in ../../browser-use (if present) instead of pypi browser-use package
 # [tool.uv.sources]
@@ -84,11 +89,8 @@ all = ["browser-use[cli,examples,aws,oci]"]
 
 
 [project.urls]
-Homepage = "https://browser-use.com"
-Documentation = "https://docs.browser-use.com"
-Repository = "https://github.com/browser-use/browser-use"
-"Terms of Service" = "https://browser-use.com/legal/terms-of-service"
-"Privacy Policy" = "https://browser-use.com/privacy/"
+Repository = "https://github.com/CodeDraig/ai-browser-use"
+Documentation = "https://github.com/CodeDraig/ai-browser-use/tree/main/docs"
 
 [project.scripts]
 browser-use = "browser_use.cli:main"  # Browser Use CLI for agents
@@ -167,9 +169,13 @@ include = [
     "browser_use/py.typed",
     "browser_use/dom/**/*.js",
     "browser_use/browser/*.js",
+	"vendor/browser-harness/src/browser_harness/**",
     "!tests/**/*.py",
     "!debug/*",
 ]
+
+[tool.hatch.build.targets.wheel.force-include]
+"vendor/browser-harness/src/browser_harness" = "browser_harness"
 
 [tool.pytest.ini_options]
 timeout = 300
@@ -228,6 +234,3 @@ dev = [
     "pytest-timeout==2.4.0",
     "pydantic_settings==2.12.0",
 ]
-
-[tool.uv.sources]
-browser-harness = { path = "vendor/browser-harness" }

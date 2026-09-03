@@ -19,7 +19,7 @@ from dotenv import load_dotenv
 from pydantic import BaseModel
 
 load_dotenv()
-from browser_use import Agent, AgentHistoryList, BrowserProfile, BrowserSession, ChatBrowserUse
+from browser_use import Agent, AgentHistoryList, BrowserProfile, BrowserSession, ChatOpenAI
 from browser_use.llm.google.chat import ChatGoogle
 from browser_use.llm.messages import UserMessage
 
@@ -58,16 +58,16 @@ async def run_single_task(task_file):
 
 		print(f'[DEBUG] Task: {task[:100]}...', file=sys.stderr)
 		print(f'[DEBUG] Max steps: {max_steps}', file=sys.stderr)
-		api_key = os.getenv('BROWSER_USE_API_KEY')
+		api_key = os.getenv('OPENAI_API_KEY')
 		if not api_key:
-			print('[SKIP] BROWSER_USE_API_KEY is not set - skipping task evaluation', file=sys.stderr)
+			print('[SKIP] OPENAI_API_KEY is not set - skipping task evaluation', file=sys.stderr)
 			return {
 				'file': os.path.basename(task_file),
 				'success': True,  # Mark as success so it doesn't fail CI
 				'explanation': 'Skipped - API key not available (fork PR or missing secret)',
 			}
 
-		agent_llm = ChatBrowserUse(api_key=api_key)
+		agent_llm = ChatOpenAI(model='gpt-4.1-mini', api_key=api_key)
 
 		# Check if Google API key is available for judge LLM
 		google_api_key = os.getenv('GOOGLE_API_KEY')

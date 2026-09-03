@@ -26,7 +26,7 @@ from browser_use.browser.session import BrowserSession
 
 pytestmark = pytest.mark.skipif(
 	not IMAGEIO_AVAILABLE,
-	reason='Recording requires the [video] extra: pip install "browser-use[video]"',
+	reason='Recording requires the `video` extra on this Browser Use source installation.',
 )
 
 

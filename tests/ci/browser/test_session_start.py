@@ -116,7 +116,6 @@ class TestBrowserSessionStart:
 				user_data_dir=None,
 				keep_alive=keep_alive,
 				enable_default_extensions=False,
-				captcha_solver=False,
 			)
 		)
 		pid = -1
@@ -166,7 +165,6 @@ class TestBrowserSessionStart:
 				user_data_dir=None,
 				keep_alive=True,
 				enable_default_extensions=False,
-				captcha_solver=False,
 			)
 		)
 		await session.start()
@@ -202,7 +200,6 @@ class TestBrowserSessionStart:
 				user_data_dir=None,
 				keep_alive=True,
 				enable_default_extensions=False,
-				captcha_solver=False,
 			)
 		)
 		old_pid = -1
@@ -248,7 +245,6 @@ class TestBrowserSessionStart:
 				is_local=True,
 				cdp_url='http://127.0.0.1:9229',
 				enable_default_extensions=False,
-				captcha_solver=False,
 			)
 		)
 		await session.watchdogs.attach()
@@ -317,7 +313,6 @@ class TestBrowserSessionStart:
 				is_local=True,
 				cdp_url='http://127.0.0.1:9230',
 				enable_default_extensions=False,
-				captcha_solver=False,
 			)
 		)
 		await session.watchdogs.attach()
@@ -352,7 +347,6 @@ class TestBrowserSessionStart:
 				is_local=True,
 				cdp_url='http://127.0.0.1:9231',
 				enable_default_extensions=False,
-				captcha_solver=False,
 			)
 		)
 		await session.watchdogs.attach()
@@ -386,7 +380,6 @@ class TestBrowserSessionStart:
 				user_data_dir=None,
 				is_local=False,
 				cdp_url='http://127.0.0.1:9232',
-				captcha_solver=False,
 			)
 		)
 		original_bus = session.event_bus
@@ -631,7 +624,7 @@ class TestBrowserSessionEventSystem:
 	@pytest.fixture(scope='function')
 	async def browser_session(self):
 		"""Create a BrowserSession instance for event system testing."""
-		profile = BrowserProfile(headless=True, user_data_dir=None, keep_alive=False, captcha_solver=False)
+		profile = BrowserProfile(headless=True, user_data_dir=None, keep_alive=False)
 		session = BrowserSession(browser_profile=profile)
 		yield session
 		await session.kill()
@@ -714,7 +707,6 @@ class TestBrowserSessionEventSystem:
 		assert browser_session.watchdogs.downloads is not None
 		assert browser_session.watchdogs.storage_state is not None
 		assert browser_session.watchdogs.har_recording is None
-		assert browser_session.watchdogs.captcha is None
 
 	async def test_direct_event_dispatching(self, browser_session):
 		"""Test direct event dispatching without using the public API."""

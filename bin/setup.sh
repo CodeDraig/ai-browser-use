@@ -23,8 +23,8 @@ if [ -f "$SCRIPT_DIR/lint.sh" ]; then
     echo "[√] already inside a cloned browser-use repo"
 else
     echo "[+] Cloning browser-use repo into current directory: $SCRIPT_DIR"
-    git clone https://github.com/browser-use/browser-use
-    cd browser-use
+    git clone https://github.com/CodeDraig/ai-browser-use
+    cd ai-browser-use
 fi
 
 echo "[+] Installing uv..."

@@ -5,8 +5,6 @@ from typing import TYPE_CHECKING, cast
 
 from cdp_use import CDPClient
 
-from browser_use.browser.cloud.cloud import CloudBrowserAuthError, CloudBrowserError
-from browser_use.browser.cloud.views import CreateBrowserRequest
 from browser_use.browser.event_bus import ResilientEventBus as _ResilientEventBus
 from browser_use.browser.events import (
 	AgentFocusChangedEvent,
@@ -103,8 +101,8 @@ class BrowserLifecycle:
 	async def stop(self) -> None:
 		"""Disconnect while preserving a BrowserSession-owned local browser.
 
-		Cloud and externally managed CDP sessions retain their existing stop
-		behavior. URL-policy enforcement is inactive until this session reconnects.
+		Externally managed CDP sessions are disconnected but not terminated.
+		URL-policy enforcement is inactive until this session reconnects.
 		"""
 		previous_intentional_stop = self.session._intentional_stop
 		self.session._intentional_stop = True
@@ -176,22 +174,9 @@ class BrowserLifecycle:
 		await self.session.watchdogs.attach()
 
 		try:
-			# If no CDP URL, launch local browser or cloud browser
+			# If no CDP URL, launch a local browser.
 			if not self.session.cdp_url:
-				if self.session.browser_profile.use_cloud or self.session.browser_profile.cloud_browser_params is not None:
-					# Use cloud browser service
-					try:
-						# Use cloud_browser_params if provided, otherwise create empty request
-						cloud_params = self.session.browser_profile.cloud_browser_params or CreateBrowserRequest()
-						cloud_browser_response = await self.session._cloud_browser_client.create_browser(cloud_params)
-						self.session.browser_profile.cdp_url = cloud_browser_response.cdpUrl
-						self.session.browser_profile.is_local = False
-						self.session.logger.info('🌤️ Successfully connected to cloud browser service')
-					except CloudBrowserAuthError:
-						raise
-					except CloudBrowserError as e:
-						raise CloudBrowserError(f'Failed to create cloud browser: {e}')
-				elif self.session.is_local:
+				if self.session.is_local:
 					# Launch local browser using event-driven approach
 					launch_event = self.session.event_bus.dispatch(BrowserLaunchEvent())
 					await launch_event
@@ -270,11 +255,6 @@ class BrowserLifecycle:
 					details={'cdp_url': self.session.cdp_url, 'is_local': self.session.is_local},
 				)
 			)
-			if self.session.is_local and not isinstance(e, (CloudBrowserAuthError, CloudBrowserError)):
-				self.session.logger.warning(
-					'Local browser failed to start. Cloud browsers require no local install and work out of the box.\n'
-					'         Try: Browser(use_cloud=True)  |  Get an API key: https://cloud.browser-use.com?utm_source=oss&utm_medium=browser_launch_failure'
-				)
 			raise
 
 	async def on_BrowserStopEvent(self, event: BrowserStopEvent) -> None:
@@ -285,25 +265,6 @@ class BrowserLifecycle:
 			if self.session.browser_profile.keep_alive and not event.force:
 				self.session.event_bus.dispatch(BrowserStoppedEvent(reason='Kept alive due to keep_alive=True'))
 				return
-
-			# Clean up cloud browser session for both:
-			# 1) native use_cloud sessions (current_session_id set by create_browser)
-			# 2) reconnected cdp_url sessions (derive UUID from host)
-			cloud_session_id = (
-				self.session._cloud_browser_client.current_session_id or self.session._cloud_session_id_from_cdp_url()
-			)
-			if cloud_session_id:
-				try:
-					await self.session._cloud_browser_client.stop_browser(cloud_session_id)
-					self.session.logger.info(f'🌤️ Cloud browser session cleaned up: {cloud_session_id}')
-				except Exception as e:
-					self.session.logger.debug(f'Failed to cleanup cloud browser session {cloud_session_id}: {e}')
-				finally:
-					# Always close the httpx client to free connection pool memory
-					try:
-						await self.session._cloud_browser_client.close()
-					except Exception:
-						pass
 
 			# Public stop()/kill() reset only after every stop handler completes,
 			# keeping artifact finalization and process cleanup ahead of CDP teardown.

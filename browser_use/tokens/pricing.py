@@ -32,7 +32,7 @@ class PricingService:
 
 	def __init__(self, include_cost: bool, pricing_url: str | None = None) -> None:
 		self.include_cost = include_cost
-		self.pricing_url = pricing_url or get_environment_config().BROWSER_USE_MODEL_PRICING_URL or self.DEFAULT_PRICING_URL
+		self.pricing_url = pricing_url or self.DEFAULT_PRICING_URL
 		self.pricing_model_names: dict[str, str] = {}
 		self.pricing_data: dict[str, Any] | None = None
 		self.initialized = False

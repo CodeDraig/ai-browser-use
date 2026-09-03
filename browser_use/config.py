@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, PrivateAttr, field_validator, model_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, PrivateAttr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -23,9 +23,6 @@ class EnvironmentConfig(BaseSettings):
 	CDP_LOGGING_LEVEL: str = Field(default='WARNING')
 	BROWSER_USE_DEBUG_LOG_FILE: str | None = Field(default=None)
 	BROWSER_USE_INFO_LOG_FILE: str | None = Field(default=None)
-	BROWSER_USE_CLOUD_API_URL: str = Field(default='https://api.browser-use.com')
-	BROWSER_USE_CLOUD_UI_URL: str = Field(default='')
-	BROWSER_USE_MODEL_PRICING_URL: str = Field(default='')
 
 	# Path configuration
 	XDG_CACHE_HOME: str = Field(default='~/.cache')
@@ -49,7 +46,6 @@ class EnvironmentConfig(BaseSettings):
 	IN_DOCKER: bool = Field(default=False)
 	IS_IN_EVALS: bool = Field(default=False)
 	WIN_FONT_DIR: str = Field(default='C:\\Windows\\Fonts')
-	BROWSER_USE_VERSION_CHECK: bool = Field(default=True)
 
 	# MCP-specific environment variables
 	BROWSER_USE_HEADLESS: bool | None = Field(default=None)
@@ -64,13 +60,6 @@ class EnvironmentConfig(BaseSettings):
 
 	# Extension environment variables
 	BROWSER_USE_DISABLE_EXTENSIONS: bool | None = Field(default=None)
-
-	@field_validator('BROWSER_USE_CLOUD_API_URL', 'BROWSER_USE_CLOUD_UI_URL', 'BROWSER_USE_MODEL_PRICING_URL')
-	@classmethod
-	def validate_url(cls, value: str) -> str:
-		if value and '://' not in value:
-			raise ValueError('configuration URL must include a scheme')
-		return value
 
 	@property
 	def logging_level(self) -> str:

@@ -23,7 +23,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from browser_use import Agent, ChatBrowserUse
+from browser_use import Agent, ChatOpenAI
 
 
 async def main():
@@ -33,7 +33,7 @@ async def main():
 			'Create a CSV file called "top_cities.csv" with columns: rank, city name, country, population. '
 			'Make sure to include all cities even if some data is missing — leave those cells empty.'
 		),
-		llm=ChatBrowserUse(model='bu-2-0-mini-preview'),
+		llm=ChatOpenAI(model='gpt-4.1-mini'),
 	)
 
 	history = await agent.run()

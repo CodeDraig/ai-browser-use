@@ -69,10 +69,7 @@ class AgentConstruction:
 			self.agent.tools.exclude_action('screenshot')
 
 		model_name = getattr(llm, 'model', '').lower()
-		if any(
-			pattern in model_name
-			for pattern in ('claude-sonnet-4', 'claude-opus-4', 'claude-fable-5', 'gemini-3-pro', 'browser-use/')
-		):
+		if any(pattern in model_name for pattern in ('claude-sonnet-4', 'claude-opus-4', 'claude-fable-5', 'gemini-3-pro')):
 			self.agent.tools.set_coordinate_clicking(True)
 
 		tools_output_model = self.agent.tools.get_output_model()
@@ -98,7 +95,6 @@ class AgentConstruction:
 		from browser_use.llm.anthropic.chat import ChatAnthropic
 
 		is_anthropic = isinstance(self.agent.llm, ChatAnthropic)
-		is_browser_use_model = 'browser-use/' in self.agent.llm.model.lower()
 		return MessageManager(
 			task=self.agent.task,
 			system_message=SystemPrompt(
@@ -108,7 +104,6 @@ class AgentConstruction:
 				use_thinking=self.agent.settings.use_thinking,
 				flash_mode=self.agent.settings.flash_mode,
 				is_anthropic=is_anthropic,
-				is_browser_use_model=is_browser_use_model,
 				model_name=self.agent.llm.model,
 			).get_system_message(),
 			file_system=self.agent.file_system,

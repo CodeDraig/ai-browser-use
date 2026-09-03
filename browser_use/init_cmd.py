@@ -1,17 +1,15 @@
 """
-Standalone init command for browser-use template generation.
+Standalone init command for offline browser-use template generation.
 
 This module provides a minimal command-line interface for generating
 browser-use templates without requiring heavy TUI dependencies.
 """
 
-import json
 import shutil
 import sys
+from importlib import resources
 from pathlib import Path
 from typing import Any
-from urllib import request
-from urllib.error import URLError
 
 import click
 from InquirerPy import inquirer
@@ -24,79 +22,33 @@ from rich.text import Text
 # Rich console for styled output
 console = Console()
 
-# GitHub template repository URL (for runtime fetching)
-TEMPLATE_REPO_URL = 'https://raw.githubusercontent.com/browser-use/template-library/main'
-
-INIT_TEMPLATES: dict[str, Any] = {}
-
-
-def _fetch_template_list() -> dict[str, Any] | None:
-	"""
-	Fetch template list from GitHub templates.json.
-
-	Returns template dict if successful, None if failed.
-	"""
-	try:
-		url = f'{TEMPLATE_REPO_URL}/templates.json'
-		with request.urlopen(url, timeout=5) as response:
-			data = response.read().decode('utf-8')
-			return json.loads(data)
-	except (URLError, TimeoutError, json.JSONDecodeError, Exception):
-		return None
+INIT_TEMPLATES: dict[str, dict[str, Any]] = {
+	'default': {
+		'description': 'Minimal local-browser agent with an explicit OpenAI model',
+		'file': 'default.py',
+	},
+	'advanced': {
+		'description': 'Structured-output agent using a Pydantic result schema',
+		'file': 'advanced.py',
+	},
+	'tools': {
+		'description': 'Agent with a typed custom action',
+		'file': 'tools.py',
+	},
+}
 
 
 def _get_template_list() -> dict[str, Any]:
-	"""
-	Get template list from GitHub.
-
-	Raises FileNotFoundError if GitHub fetch fails.
-	"""
-	templates = _fetch_template_list()
-	if templates is not None:
-		return templates
-	raise FileNotFoundError('Could not fetch templates from GitHub. Check your internet connection.')
-
-
-def _fetch_from_github(file_path: str) -> str | None:
-	"""
-	Fetch template file from GitHub.
-
-	Returns file content if successful, None if failed.
-	"""
-	try:
-		url = f'{TEMPLATE_REPO_URL}/{file_path}'
-		with request.urlopen(url, timeout=5) as response:
-			return response.read().decode('utf-8')
-	except (URLError, TimeoutError, Exception):
-		return None
-
-
-def _fetch_binary_from_github(file_path: str) -> bytes | None:
-	"""
-	Fetch binary file from GitHub.
-
-	Returns file content if successful, None if failed.
-	"""
-	try:
-		url = f'{TEMPLATE_REPO_URL}/{file_path}'
-		with request.urlopen(url, timeout=5) as response:
-			return response.read()
-	except (URLError, TimeoutError, Exception):
-		return None
+	"""Return the templates bundled with this installation."""
+	return INIT_TEMPLATES
 
 
 def _get_template_content(file_path: str) -> str:
-	"""
-	Get template file content from GitHub.
-
-	Raises exception if fetch fails.
-	"""
-	content = _fetch_from_github(file_path)
-
-	if content is not None:
-		return content
-
-	raise FileNotFoundError(f'Could not fetch template from GitHub: {file_path}')
+	"""Read a template from the installed package."""
+	try:
+		return resources.files('browser_use.cli_templates').joinpath(file_path).read_text(encoding='utf-8')
+	except (FileNotFoundError, ModuleNotFoundError) as exc:
+		raise FileNotFoundError(f'Bundled template is missing: {file_path}') from exc
 
 
 # InquirerPy style for template selection (browser-use orange theme)
@@ -225,33 +177,28 @@ def main(
 
 	\b
 	# Interactive mode - prompts for template selection
-	uvx browser-use init
-	uvx browser-use init --template
+	browser-use init
+	browser-use init --template
 
 	\b
 	# Generate default template
-	uvx browser-use init --template default
+	browser-use init --template default
 
 	\b
 	# Generate advanced template with custom filename
-	uvx browser-use init --template advanced --output my_script.py
+	browser-use init --template advanced --output my_script.py
 
 	\b
 	# List available templates
-	uvx browser-use init --list
+	browser-use init --list
 	"""
 
-	# Fetch template list at runtime
-	try:
-		INIT_TEMPLATES = _get_template_list()
-	except FileNotFoundError as e:
-		console.print(f'[red]✗[/red] {e}')
-		sys.exit(1)
+	templates = _get_template_list()
 
 	# Handle --list flag
 	if list_templates:
 		console.print('\n[bold]Available templates:[/bold]\n')
-		for name, info in INIT_TEMPLATES.items():
+		for name, info in templates.items():
 			console.print(f'  [#fe750e]{name:12}[/#fe750e] - {info["description"]}')
 		console.print()
 		return
@@ -263,10 +210,10 @@ def main(
 
 		# Separate default and featured templates
 		default_template_names = ['default', 'advanced', 'tools']
-		featured_templates = [(name, info) for name, info in INIT_TEMPLATES.items() if info.get('featured', False)]
+		featured_templates = [(name, info) for name, info in templates.items() if info.get('featured', False)]
 		other_templates = [
 			(name, info)
-			for name, info in INIT_TEMPLATES.items()
+			for name, info in templates.items()
 			if name not in default_template_names and not info.get('featured', False)
 		]
 
@@ -281,7 +228,7 @@ def main(
 			return date_str
 
 		# Sort default templates by last modified
-		default_templates = [(name, INIT_TEMPLATES[name]) for name in default_template_names if name in INIT_TEMPLATES]
+		default_templates = [(name, templates[name]) for name in default_template_names if name in templates]
 		default_templates.sort(key=get_last_modified, reverse=True)
 
 		# Sort featured and other templates by last modified
@@ -341,9 +288,9 @@ def main(
 	else:
 		output_path = template_dir / 'main.py'
 
-	# Read template file from GitHub
+	# Read the template from the installed package.
 	try:
-		template_file = INIT_TEMPLATES[template]['file']
+		template_file = templates[template]['file']
 		content = _get_template_content(template_file)
 	except Exception as e:
 		console.print(f'[red]✗[/red] Error reading template: {e}')
@@ -353,47 +300,12 @@ def main(
 	if _write_init_file(output_path, content, force):
 		console.print(f'\n[green]✓[/green] Created [cyan]{output_path}[/cyan]')
 
-		# Generate additional files if template has a manifest
-		if 'files' in INIT_TEMPLATES[template]:
-			import stat
-
-			for file_spec in INIT_TEMPLATES[template]['files']:
-				source_path = file_spec['source']
-				dest_name = file_spec['dest']
-				dest_path = output_path.parent / dest_name
-				is_binary = file_spec.get('binary', False)
-				is_executable = file_spec.get('executable', False)
-
-				# Skip if we already wrote this file (main.py)
-				if dest_path == output_path:
-					continue
-
-				# Fetch and write file
-				try:
-					if is_binary:
-						file_content = _fetch_binary_from_github(source_path)
-						if file_content:
-							if not dest_path.exists() or force:
-								dest_path.write_bytes(file_content)
-								console.print(f'[green]✓[/green] Created [cyan]{dest_name}[/cyan]')
-						else:
-							console.print(f'[yellow]⚠[/yellow]  Could not fetch [cyan]{dest_name}[/cyan] from GitHub')
-					else:
-						file_content = _get_template_content(source_path)
-						if _write_init_file(dest_path, file_content, force):
-							console.print(f'[green]✓[/green] Created [cyan]{dest_name}[/cyan]')
-							# Make executable if needed
-							if is_executable and sys.platform != 'win32':
-								dest_path.chmod(dest_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-				except Exception as e:
-					console.print(f'[yellow]⚠[/yellow]  Error generating [cyan]{dest_name}[/cyan]: {e}')
-
 		# Create a nice panel for next steps
 		next_steps = Text()
 
 		# Display next steps from manifest if available
-		if 'next_steps' in INIT_TEMPLATES[template]:
-			steps = INIT_TEMPLATES[template]['next_steps']
+		if 'next_steps' in templates[template]:
+			steps = templates[template]['next_steps']
 			for i, step in enumerate(steps, 1):
 				# Handle footer separately (no numbering)
 				if 'footer' in step:
@@ -421,14 +333,10 @@ def main(
 			next_steps.append(f'   cd {template}\n\n', style='dim')
 			next_steps.append('2. Initialize uv project:\n', style='bold')
 			next_steps.append('   uv init\n\n', style='dim')
-			next_steps.append('3. Install browser-use:\n', style='bold')
-			next_steps.append('   uv add browser-use\n\n', style='dim')
-			next_steps.append('4. Set up your API key in .env file or environment:\n', style='bold')
-			next_steps.append('   BROWSER_USE_API_KEY=your-key\n', style='dim')
-			next_steps.append(
-				'   (Get your key at https://cloud.browser-use.com/dashboard/settings?tab=api-keys&new&utm_source=oss&utm_medium=cli)\n\n',
-				style='dim italic',
-			)
+			next_steps.append('3. Install this Browser Use fork:\n', style='bold')
+			next_steps.append('   uv add "browser-use @ git+https://github.com/CodeDraig/ai-browser-use.git"\n\n', style='dim')
+			next_steps.append('4. Set up the API key for your selected model:\n', style='bold')
+			next_steps.append('   OPENAI_API_KEY=your-key\n\n', style='dim')
 			next_steps.append('5. Run your script:\n', style='bold')
 			next_steps.append(f'   uv run {output_path.name}\n', style='dim')
 

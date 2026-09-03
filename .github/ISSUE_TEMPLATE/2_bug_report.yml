@@ -26,7 +26,7 @@ body:
       label: Bug Description, Steps to Reproduce, Screenshots
       description: A clear and concise description of what the bug is + steps taken, drag screenshots in showing any error messages and relevant pages.
       placeholder: |
-        1. Installed browser-use library by running: `uv pip install browser-use`
+        1. Installed this fork by running: `uv pip install "browser-use @ git+https://github.com/CodeDraig/ai-browser-use.git"`
         2. Installed the browser by running: `playwright install chromium --with-deps`
         3. Ran the code below with the following prompt: `go to example.com and do xyz...`
         4. Agent crashed and showed the following error: ...
@@ -57,7 +57,7 @@ body:
     attributes:
       label: LLM Model
       description: Which LLM model are you using? (Optional)
-      placeholder: "e.g. ChatBrowserUse, gpt-4.1-mini, gemini-3-flash-preview, etc."
+      placeholder: "e.g. gpt-4.1-mini, gemini-3-flash-preview, etc."
 
   - type: input
     id: os

@@ -58,12 +58,11 @@ body:
       value: |
         ---
         > [!IMPORTANT]
-        > 🙏 Please **go check *right now before filling this out* that that you have tried the [⬆️ LATEST VERSION](https://github.com/browser-use/browser-use/releases)**.
+        > 🙏 Please **go check *right now before filling this out* that that you have tried the [⬆️ LATEST VERSION](https://github.com/CodeDraig/ai-browser-use/releases)**.
         > 🚀 We ship *hundreds* of improvements a day and we might've already added a solution to your need yesterday!  
-        > <a href="https://github.com/browser-use/browser-use/releases"><img src="https://github.com/user-attachments/assets/4cd34ee6-bafb-4f24-87e2-27a31dc5b9a4" width="500px"/></a>
+        > <a href="https://github.com/CodeDraig/ai-browser-use/releases"><img src="https://github.com/user-attachments/assets/4cd34ee6-bafb-4f24-87e2-27a31dc5b9a4" width="500px"/></a>
         > If you are running an old version, the **first thing we will ask you to do is *try the latest `beta`***:
-        > - 🆕 [`beta`](https://docs.browser-use.com/development/local-setup):   `uv pip install --upgrade git+https://github.com/browser-use/browser-use.git@main`
-        > - 📦 [`stable`](https://pypi.org/project/browser-use/#history): `pip install --upgrade browser-use`
+        > - Install this fork: `uv pip install --upgrade "browser-use @ git+https://github.com/CodeDraig/ai-browser-use.git"`
 
   - type: checkboxes
     id: priority
@@ -76,9 +75,7 @@ body:
           required: false
         - label: "It would be nice to add it sometime in the next 2 years"
           required: false
-        - label: "💪 I'm willing to [start a PR](https://docs.browser-use.com/development/contribution-guide) to work on this myself"
-          required: false
-        - label: "💼 My company would spend >$5k on [Browser-Use Cloud](https://browser-use.com) if it solved this reliably for us"
+        - label: "💪 I'm willing to [start a PR](https://github.com/CodeDraig/ai-browser-use/blob/main/.github/CONTRIBUTING.md) to work on this myself"
           required: false
 
   - type: markdown
@@ -89,5 +86,5 @@ body:
         > Start conversations about your feature request in other places too, the more  
         > 📣 hype we see around a request the more likely we are to add it!
         >
-        > - 👾 Discord: [https://link.browser-use.com/discord](https://link.browser-use.com/discord)
+        > - Discussions: [https://github.com/CodeDraig/ai-browser-use/discussions](https://github.com/CodeDraig/ai-browser-use/discussions)
         > - 𝕏  Twitter: [https://x.com/browser_use](https://x.com/browser_use)

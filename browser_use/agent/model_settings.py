@@ -47,12 +47,8 @@ class AgentModelSettings:
 
 				llm = get_llm_by_name(default_llm_name)
 			else:
-				from browser_use import ChatBrowserUse
+				raise ValueError('Agent requires an llm argument or the DEFAULT_LLM environment variable')
 
-				llm = ChatBrowserUse()
-
-		if llm.provider == 'browser-use':
-			flash_mode = True
 		if flash_mode:
 			enable_planning = False
 

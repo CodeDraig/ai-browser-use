@@ -1,12 +1,12 @@
 import asyncio
 
-from browser_use import Agent, Browser, ChatBrowserUse, Tools
+from browser_use import Agent, Browser, ChatOpenAI, Tools
 
 
 async def main():
 	browser = Browser(cdp_url='http://localhost:9222')
 
-	llm = ChatBrowserUse(model='bu-2-0-mini-preview')
+	llm = ChatOpenAI(model='gpt-4.1-mini')
 
 	tools = Tools()
 

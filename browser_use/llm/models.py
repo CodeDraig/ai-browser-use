@@ -8,14 +8,12 @@ Usage:
     model = llm.azure_gpt_4_1_mini
     model = llm.openai_gpt_4o
     model = llm.google_gemini_2_5_pro
-    model = llm.bu_latest  # or bu_2_0_mini_preview, bu_2_0, bu_1_0
 """
 
 import os
 from typing import TYPE_CHECKING
 
 from browser_use.llm.azure.chat import ChatAzureOpenAI
-from browser_use.llm.browser_use.chat import ChatBrowserUse
 from browser_use.llm.cerebras.chat import ChatCerebras
 from browser_use.llm.google.chat import ChatGoogle
 from browser_use.llm.mistral.chat import ChatMistral
@@ -79,11 +77,6 @@ anthropic_claude_3_5_haiku_latest: 'BaseChatModel'
 cerebras_gpt_oss_120b: 'BaseChatModel'
 cerebras_zai_glm_4_7: 'BaseChatModel'
 cerebras_gemma_4_31b: 'BaseChatModel'
-
-bu_latest: 'BaseChatModel'
-bu_1_0: 'BaseChatModel'
-bu_2_0: 'BaseChatModel'
-bu_2_0_mini_preview: 'BaseChatModel'
 
 
 def get_llm_by_name(model_name: str):
@@ -212,15 +205,8 @@ def get_llm_by_name(model_name: str):
 		api_key = os.getenv('CEREBRAS_API_KEY')
 		return ChatCerebras(model=model, api_key=api_key)
 
-	# Browser Use Models
-	elif provider == 'bu':
-		# Handle bu_latest -> bu-latest conversion (need to prepend 'bu-' back)
-		model = f'bu-{model_part.replace("_", "-")}'
-		api_key = os.getenv('BROWSER_USE_API_KEY')
-		return ChatBrowserUse(model=model, api_key=api_key)
-
 	else:
-		available_providers = ['openai', 'azure', 'google', 'anthropic', 'mistral', 'oci', 'cerebras', 'bu']
+		available_providers = ['openai', 'azure', 'google', 'anthropic', 'mistral', 'oci', 'cerebras']
 		raise ValueError(f"Unknown provider: '{provider}'. Available providers: {', '.join(available_providers)}")
 
 
@@ -240,13 +226,10 @@ def __getattr__(name: str) -> 'BaseChatModel':
 
 	elif name == 'ChatOCIRaw':
 		if not OCI_AVAILABLE:
-			raise ImportError('OCI integration not available. Install with: pip install "browser-use[oci]"')
+			raise ImportError('OCI integration not available. Enable the `oci` extra for this Browser Use source installation.')
 		return ChatOCIRaw  # type: ignore
 	elif name == 'ChatCerebras':
 		return ChatCerebras  # type: ignore
-	elif name == 'ChatBrowserUse':
-		return ChatBrowserUse  # type: ignore
-
 	# Handle model instances - these are the main use case
 	try:
 		return get_llm_by_name(name)
@@ -261,7 +244,6 @@ __all__ = [
 	'ChatGoogle',
 	'ChatMistral',
 	'ChatCerebras',
-	'ChatBrowserUse',
 ]
 
 if OCI_AVAILABLE:
@@ -316,11 +298,6 @@ __all__ += [
 	'cerebras_gpt_oss_120b',
 	'cerebras_zai_glm_4_7',
 	'cerebras_gemma_4_31b',
-	# Browser Use instances - created on demand
-	'bu_latest',
-	'bu_1_0',
-	'bu_2_0',
-	'bu_2_0_mini_preview',
 ]
 
 # NOTE: OCI backend is optional. The try/except ImportError and conditional __all__ are required

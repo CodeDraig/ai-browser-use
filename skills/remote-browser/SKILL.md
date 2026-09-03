@@ -14,7 +14,7 @@ This skill is for agents running on **sandboxed remote machines** (cloud VMs, CI
 browser-use doctor    # Verify installation
 ```
 
-For setup details, see https://github.com/browser-use/browser-use/blob/main/browser_use/skill_cli/README.md
+For setup details, see https://github.com/CodeDraig/ai-browser-use/blob/main/browser_use/skill_cli/README.md
 
 ## Core Workflow
 
@@ -29,7 +29,6 @@ For setup details, see https://github.com/browser-use/browser-use/blob/main/brow
 
 ```bash
 browser-use open <url>                                    # Default: headless Chromium
-browser-use cloud connect                                 # Provision cloud browser and connect
 browser-use --connect open <url>                          # Auto-discover running Chrome via CDP
 browser-use --cdp-url ws://localhost:9222/... open <url>  # Connect via CDP URL
 ```

@@ -48,12 +48,12 @@ Run multiple agents concurrently:
 
 ```python
 import asyncio
-from browser_use import Agent, Browser, ChatBrowserUse
+from browser_use import Agent, Browser, ChatOpenAI
 
 async def run_task(task: str, index: int):
     browser = Browser(user_data_dir=f'./temp-profile-{index}')
     try:
-        agent = Agent(task=task, llm=ChatBrowserUse(), browser=browser)
+        agent = Agent(task=task, llm=ChatOpenAI(model="gpt-4.1-mini"), browser=browser)
         result = await agent.run()
         return result
     finally:
@@ -75,14 +75,14 @@ Each agent gets its own browser with a separate profile to avoid conflicts.
 Chain tasks in a persistent browser session:
 
 ```python
-from browser_use import Agent, Browser, ChatBrowserUse
+from browser_use import Agent, Browser, ChatOpenAI
 
 browser = Browser(keep_alive=True)
 await browser.start()
 
 agent = Agent(
     task="Go to GitHub and search for 'browser-use'",
-    llm=ChatBrowserUse(),
+    llm=ChatOpenAI(model="gpt-4.1-mini"),
     browser=browser,
 )
 await agent.run()
@@ -146,7 +146,7 @@ Share Chrome between Playwright and Browser-Use via CDP:
 ```python
 import subprocess
 from playwright.async_api import async_playwright
-from browser_use import Agent, Browser, Tools, ChatBrowserUse
+from browser_use import Agent, Browser, Tools, ChatOpenAI
 
 # 1. Start Chrome with remote debugging
 proc = subprocess.Popen([
@@ -177,7 +177,7 @@ try:
         return 'Screenshot saved'
 
     # 5. Agent orchestrates using both
-    agent = Agent(task="Fill out the form", llm=ChatBrowserUse(), browser=browser, tools=tools)
+    agent = Agent(task="Fill out the form", llm=ChatOpenAI(model="gpt-4.1-mini"), browser=browser, tools=tools)
     await agent.run()
 finally:
     if pw:

@@ -62,9 +62,7 @@ class VideoRecorderService:
 		log an error and do nothing.
 		"""
 		if not IMAGEIO_AVAILABLE:
-			logger.error(
-				'MP4 recording requires optional dependencies. Please install them with: pip install "browser-use[video]"'
-			)
+			logger.error('MP4 recording requires the `video` extra from the same Browser Use source installation.')
 			return
 
 		try:

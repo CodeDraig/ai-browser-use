@@ -20,7 +20,7 @@ https://github.com/user-attachments/assets/7fab54a9-b36b-4fba-ab98-a438f2b86b7e
 
 Make sure the newest version of browser-use is installed (with screenshot functionality):
 ```bash
-pip install -U browser-use
+uv pip install "browser-use @ git+https://github.com/CodeDraig/ai-browser-use.git"
 ```
 
 Export your Gemini API key, get it from: [Google AI Studio](https://makersuite.google.com/app/apikey) 
@@ -30,7 +30,7 @@ export GOOGLE_API_KEY='your-google-api-key-here'
 
 Clone the repo and cd into the app folder
 ```bash
-git clone https://github.com/browser-use/browser-use.git
+git clone https://github.com/CodeDraig/ai-browser-use.git
 cd browser-use/examples/apps/ad-use
 ```
 

@@ -7,14 +7,14 @@ This server provides tools for:
 - File system operations
 
 Usage:
-    uvx browser-use --mcp
+    browser-use --mcp
 
 Or as an MCP server in Claude Desktop or other MCP clients:
     {
         "mcpServers": {
             "browser-use": {
-                "command": "uvx",
-                "args": ["browser-use[cli]", "--mcp"],
+                "command": "browser-use",
+                "args": ["--mcp"],
                 "env": {
                     "OPENAI_API_KEY": "sk-proj-1234567890",
                 }

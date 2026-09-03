@@ -151,7 +151,6 @@ class Tools(Generic[Context]):
 		- claude-opus-4-5
 		- claude-fable-5
 		- gemini-3-pro
-		- browser-use/* models
 
 		Args:
 			enabled: True to enable coordinate clicking, False to disable

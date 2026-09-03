@@ -2,7 +2,7 @@ import asyncio
 
 from pydantic import BaseModel, Field
 
-from browser_use import Agent, Browser, ChatBrowserUse
+from browser_use import Agent, Browser, ChatOpenAI
 
 
 class GroceryItem(BaseModel):
@@ -24,7 +24,7 @@ class GroceryCart(BaseModel):
 async def add_to_cart(items: list[str] = ['milk', 'eggs', 'bread']):
 	browser = Browser(cdp_url='http://localhost:9222')
 
-	llm = ChatBrowserUse(model='bu-2-0-mini-preview')
+	llm = ChatOpenAI(model='gpt-4.1-mini')
 
 	# Task prompt
 	task = f"""

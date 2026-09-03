@@ -16,7 +16,7 @@ This directory is for examples that show Browser Use working with external produ
 - Keep the example focused on the Browser Use integration point.
 - Document required environment variables, OAuth scopes, and local services.
 - Do not commit secrets, tokens, generated credentials, or private account data.
-- Prefer `ChatBrowserUse()` unless the example is specifically about another model.
+- Use an explicitly configured model client for each integration example.
 - Include the command that runs the example from the repository root.
 
 ## Community integrations

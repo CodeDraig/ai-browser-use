@@ -4,7 +4,6 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-BROWSER_USE_REPO_SKILL_URL = 'https://raw.githubusercontent.com/browser-use/browser-use/main/skills/browser-use/SKILL.md'
 EXPECTED_SKILL_INSTALL_PATHS = (
 	Path('.agents') / 'skills' / 'browser-use' / 'SKILL.md',
 	Path('.claude') / 'skills' / 'browser-use' / 'SKILL.md',
@@ -17,62 +16,53 @@ EXPECTED_SKILL_INSTALL_PATHS = (
 )
 
 
-def _fake_browser_harness_tools(tmp_path: Path, skill_text: str) -> Path:
+def _fake_external_tools(tmp_path: Path) -> tuple[Path, Path]:
+	"""Create failing uv/harness commands so tests prove installation is copy-only."""
 	bin_dir = tmp_path / 'bin'
 	bin_dir.mkdir()
+	sentinel = tmp_path / 'external-tool-ran.txt'
 
-	uv = bin_dir / 'uv'
-	uv.write_text(
-		'#!/usr/bin/env python3\n'
-		'import os, pathlib, sys\n'
-		'pathlib.Path(os.environ["UV_TOOL_INSTALL_ARGS_FILE"]).write_text(" ".join(sys.argv[1:]), encoding="utf-8")\n',
-		encoding='utf-8',
-	)
-	uv.chmod(0o755)
-
-	browser_harness = bin_dir / 'browser-harness'
-	browser_harness.write_text(
-		'#!/usr/bin/env python3\n'
-		'import sys\n'
-		f'text = {skill_text!r}\n'
-		'if sys.argv[1:] == ["skill"]:\n'
-		'    print(text, end="")\n'
-		'else:\n'
-		'    print("usage: browser-harness skill", file=sys.stderr)\n'
-		'    sys.exit(2)\n',
-		encoding='utf-8',
-	)
-	browser_harness.chmod(0o755)
-	return bin_dir
+	for name in ('uv', 'browser-harness'):
+		tool = bin_dir / name
+		tool.write_text(
+			'#!/usr/bin/env python3\n'
+			'import os, pathlib, sys\n'
+			f'pathlib.Path(os.environ["EXTERNAL_TOOL_SENTINEL"]).write_text({name!r}, encoding="utf-8")\n'
+			'sys.exit(99)\n',
+			encoding='utf-8',
+		)
+		tool.chmod(0o755)
+	return bin_dir, sentinel
 
 
-def test_docs_install_browser_use_skill_from_package():
-	readme = (ROOT / 'README.md').read_text(encoding='utf-8')
-
-	assert 'run `browser-use skill install` to register the skill' in readme
-	assert 'mkdir -p ~/.claude/skills/browser-use' not in readme
-	assert 'uv run --with "browser-use[browser-harness]" python -c' not in readme
-	assert 'from browser_use.skills import browser_use_skill_text' not in readme
-	assert BROWSER_USE_REPO_SKILL_URL not in readme
-	assert 'raw.githubusercontent.com/browser-use/browser-harness/main/SKILL.md' not in readme
-
-
-def test_browser_use_cli_installs_browser_harness_package_skill(tmp_path):
-	bin_dir = _fake_browser_harness_tools(tmp_path, '---\nname: browser-harness\n---\n\n# Browser Harness\n')
-
-	home = tmp_path / 'home'
-	for stale in (home / path for path in EXPECTED_SKILL_INSTALL_PATHS):
-		stale.parent.mkdir(parents=True)
-		stale.write_text('stale browser-use skill', encoding='utf-8')
-
-	uv_args = tmp_path / 'uv-args.txt'
+def _skill_subprocess_env(tmp_path: Path, home: Path) -> tuple[dict[str, str], Path]:
+	bin_dir, sentinel = _fake_external_tools(tmp_path)
 	env = os.environ.copy()
 	env['HOME'] = str(home)
 	env['XDG_CONFIG_HOME'] = str(home / '.config')
 	env['PATH'] = os.pathsep.join(part for part in (str(bin_dir), env.get('PATH', '')) if part)
 	env['PYTHONPATH'] = os.pathsep.join(part for part in (str(ROOT), env.get('PYTHONPATH', '')) if part)
-	env['UV_TOOL_INSTALL_ARGS_FILE'] = str(uv_args)
+	env['EXTERNAL_TOOL_SENTINEL'] = str(sentinel)
+	return env, sentinel
 
+
+def test_docs_install_this_fork_and_copy_the_bundled_skill():
+	readme = (ROOT / 'README.md').read_text(encoding='utf-8')
+
+	assert 'browser-use skill install' in readme
+	assert 'git+https://github.com/CodeDraig/ai-browser-use.git' in readme
+	assert 'uv add browser-use' not in readme
+	assert 'uvx browser-use' not in readme
+	assert 'raw.githubusercontent.com/browser-use' not in readme
+
+
+def test_browser_use_cli_installs_bundled_skill_without_external_commands(tmp_path):
+	home = tmp_path / 'home'
+	for stale in (home / path for path in EXPECTED_SKILL_INSTALL_PATHS):
+		stale.parent.mkdir(parents=True)
+		stale.write_text('stale browser-use skill', encoding='utf-8')
+
+	env, sentinel = _skill_subprocess_env(tmp_path, home)
 	result = subprocess.run(
 		[sys.executable, '-m', 'browser_use.cli', 'skill', 'install'],
 		cwd=ROOT,
@@ -83,48 +73,18 @@ def test_browser_use_cli_installs_browser_harness_package_skill(tmp_path):
 	)
 
 	assert result.returncode == 0, result.stderr
-	assert uv_args.read_text(encoding='utf-8') == 'tool install --python 3.12 --upgrade --force browser-use'
-	expected = (
-		'---\n'
-		'name: browser-use\n'
-		'description: "Direct browser control via CDP for web interaction: automation, scraping, testing, screenshots, and site/app work."\n'
-		'homepage: https://browser-use.com\n'
-		'metadata:\n'
-		'  {\n'
-		'    "openclaw":\n'
-		'      {\n'
-		'        "requires": { "bins": ["browser-use"] },\n'
-		'        "install":\n'
-		'          [\n'
-		'            {\n'
-		'              "id": "uv",\n'
-		'              "kind": "uv",\n'
-		'              "package": "browser-use",\n'
-		'              "bins": ["browser-use"],\n'
-		'              "label": "Install Browser Use CLI (uv)",\n'
-		'            },\n'
-		'          ],\n'
-		'      },\n'
-		'  }\n'
-		'---\n\n'
-		'# Browser Use\n'
-	)
+	assert not sentinel.exists()
+	expected = (ROOT / 'browser_use' / 'skills' / 'browser-use' / 'SKILL.md').read_text(encoding='utf-8')
+	assert '"package": "browser-use"' not in expected
 	for installed in (home / path for path in EXPECTED_SKILL_INSTALL_PATHS):
 		assert installed.read_text(encoding='utf-8') == expected
 
 
-def test_browser_use_cli_validates_destination_before_installing_harness(tmp_path):
-	bin_dir = _fake_browser_harness_tools(tmp_path, '---\nname: browser-harness\n---\n\n# Browser Harness\n')
+def test_browser_use_cli_validates_destination_before_writing(tmp_path):
 	blocking_file = tmp_path / 'not-a-directory'
 	blocking_file.write_text('blocks skill directory creation', encoding='utf-8')
 
-	uv_args = tmp_path / 'uv-args.txt'
-	env = os.environ.copy()
-	env['HOME'] = str(tmp_path / 'home')
-	env['PATH'] = os.pathsep.join(part for part in (str(bin_dir), env.get('PATH', '')) if part)
-	env['PYTHONPATH'] = os.pathsep.join(part for part in (str(ROOT), env.get('PYTHONPATH', '')) if part)
-	env['UV_TOOL_INSTALL_ARGS_FILE'] = str(uv_args)
-
+	env, sentinel = _skill_subprocess_env(tmp_path, tmp_path / 'home')
 	result = subprocess.run(
 		[sys.executable, '-m', 'browser_use.cli', 'skill', 'install', '--path', str(blocking_file / 'nested')],
 		cwd=ROOT,
@@ -136,4 +96,18 @@ def test_browser_use_cli_validates_destination_before_installing_harness(tmp_pat
 
 	assert result.returncode == 1
 	assert 'is not a directory' in result.stderr
-	assert not uv_args.exists()
+	assert not sentinel.exists()
+
+
+def test_skill_help_has_no_package_install_or_upgrade_option():
+	result = subprocess.run(
+		[sys.executable, '-m', 'browser_use.cli', 'skill', 'install', '--help'],
+		cwd=ROOT,
+		capture_output=True,
+		text=True,
+		timeout=10,
+	)
+
+	assert result.returncode == 0
+	assert '--no-install' not in result.stdout
+	assert 'upgrade' not in result.stdout.lower()

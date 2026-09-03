@@ -5,18 +5,14 @@ import difflib
 import importlib.util
 import sys
 from pathlib import Path
-from urllib.request import urlopen
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_SOURCE_URL = 'https://raw.githubusercontent.com/browser-use/browser-harness/refs/heads/main/SKILL.md'
+DEFAULT_SOURCE_PATH = ROOT / 'vendor' / 'browser-harness' / 'src' / 'browser_harness' / 'SKILL.md'
 DEFAULT_REPO_OUTPUT_PATH = ROOT / 'skills' / 'browser-use' / 'SKILL.md'
 DEFAULT_PACKAGE_OUTPUT_PATH = ROOT / 'browser_use' / 'skills' / 'browser-use' / 'SKILL.md'
 
 
 def _read_source(source: str) -> str:
-	if source.startswith(('http://', 'https://')):
-		with urlopen(source, timeout=30) as response:
-			return response.read().decode('utf-8')
 	return Path(source).read_text(encoding='utf-8')
 
 
@@ -32,8 +28,8 @@ def _to_browser_use_skill(text: str) -> str:
 
 
 def _build_parser() -> argparse.ArgumentParser:
-	parser = argparse.ArgumentParser(description='Sync the Browser Use skill from browser-harness/SKILL.md.')
-	parser.add_argument('--source', default=DEFAULT_SOURCE_URL, help='Source SKILL.md path or URL.')
+	parser = argparse.ArgumentParser(description='Sync the Browser Use skill from the bundled browser-harness/SKILL.md.')
+	parser.add_argument('--source', default=str(DEFAULT_SOURCE_PATH), help='Local source SKILL.md path.')
 	parser.add_argument(
 		'--output',
 		type=Path,

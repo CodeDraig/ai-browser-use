@@ -39,9 +39,6 @@ class AgentJudge:
 			use_vision=self.agent.settings.use_vision,
 		)
 		kwargs: dict = {'output_format': JudgementResult}
-		if self.agent.judge_llm.provider == 'browser-use':
-			kwargs['request_type'] = 'judge'
-			kwargs['session_id'] = self.agent.session_id
 
 		try:
 			response = await self.agent.judge_llm.ainvoke(input_messages, **kwargs)
@@ -70,11 +67,6 @@ class AgentJudge:
 		judge_log += f'⚖️  {verdict_color}Judge Verdict: {verdict_text}\033[0m\n'
 		if judgement.failure_reason:
 			judge_log += f'   Failure Reason: {judgement.failure_reason}\n'
-		if judgement.reached_captcha:
-			self.agent.logger.warning(
-				'Agent was blocked by a captcha. Cloud browsers include stealth fingerprinting and proxy rotation to avoid this.\n'
-				'         Try: Browser(use_cloud=True)  |  Get an API key: https://cloud.browser-use.com?utm_source=oss&utm_medium=captcha_nudge'
-			)
 		judge_log += f'   {judgement.reasoning}\n'
 		self.agent.logger.info(judge_log)
 

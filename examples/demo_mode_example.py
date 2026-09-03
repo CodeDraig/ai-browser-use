@@ -1,12 +1,12 @@
 import asyncio
 
-from browser_use import Agent, ChatBrowserUse
+from browser_use import Agent, ChatOpenAI
 
 
 async def main() -> None:
 	agent = Agent(
 		task='Please find the latest commit on browser-use/browser-use repo and tell me the commit message. Please summarize what it is about.',
-		llm=ChatBrowserUse(model='bu-2-0-mini-preview'),
+		llm=ChatOpenAI(model='gpt-4.1-mini'),
 		demo_mode=True,
 	)
 	await agent.run(max_steps=5)

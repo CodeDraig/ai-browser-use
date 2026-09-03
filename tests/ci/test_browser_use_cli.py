@@ -25,15 +25,3 @@ def test_browser_use_doctor_help_prints_browser_use_usage():
 	assert result.returncode == 0
 	assert result.stdout == 'usage: browser-use doctor [--fix-snap]\n'
 	assert result.stderr == ''
-
-
-def test_normalize_captured_cli_output_handles_string_system_exit(capsys):
-	from browser_use.cli import _normalize_captured_cli_output
-
-	def exits_with_string(_argv):
-		raise SystemExit('browser-harness failed')
-
-	assert _normalize_captured_cli_output(exits_with_string, []) == 1
-	captured = capsys.readouterr()
-	assert captured.out == ''
-	assert captured.err == 'browser-use failed\n'

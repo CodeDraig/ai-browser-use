@@ -1,17 +1,17 @@
 """
 Setup:
-1. Get your API key from https://cloud.browser-use.com/new-api-key
-2. Set environment variable: export BROWSER_USE_API_KEY="your-key"
+1. Create an API key for your chosen model provider
+2. Set environment variable: export OPENAI_API_KEY="your-key"
 """
 
 from dotenv import load_dotenv
 
-from browser_use import Agent, ChatBrowserUse
+from browser_use import Agent, ChatOpenAI
 
 load_dotenv()
 
 agent = Agent(
 	task='Find the number of stars of the following repos: browser-use, playwright, stagehand, react, nextjs',
-	llm=ChatBrowserUse(model='bu-2-0-mini-preview'),
+	llm=ChatOpenAI(model='gpt-4.1-mini'),
 )
 agent.run_sync()

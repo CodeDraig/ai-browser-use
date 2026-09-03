@@ -178,7 +178,7 @@ class AgentModelInteraction:
 		urls_replaced = self.url_shortener.shorten_messages(input_messages)
 
 		# Build kwargs for ainvoke
-		# Note: ChatBrowserUse will automatically generate action descriptions from output_format schema
+		# Model-specific adapters may generate action descriptions from the output schema.
 		kwargs: dict = {'output_format': self.agent.AgentOutput, 'session_id': self.agent.session_id}
 
 		try:

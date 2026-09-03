@@ -96,7 +96,7 @@ element = await page.must_get_element_by_prompt("login button", llm=page_extract
 
 ## Available Default Tools
 
-Source: [tools/service.py](https://github.com/browser-use/browser-use/blob/main/browser_use/tools/service.py)
+Source: [tools/service.py](https://github.com/CodeDraig/ai-browser-use/blob/main/browser_use/tools/service.py)
 
 ### Navigation & Browser Control
 - `search` — Search queries (DuckDuckGo, Google, Bing)

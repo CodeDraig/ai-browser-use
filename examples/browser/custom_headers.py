@@ -26,7 +26,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from browser_use import Agent, Browser, ChatBrowserUse
+from browser_use import Agent, Browser, ChatOpenAI
 from browser_use.browser.events import AgentFocusChangedEvent, TabCreatedEvent
 from browser_use.browser.watchdog_base import BaseWatchdog
 
@@ -90,7 +90,7 @@ async def main():
 			'Open https://httpbin.org/headers in two different tabs and extract the full JSON response. '
 			'Look for the custom headers X-Custom-Auth, X-Request-Source, and X-Trace-Id in the output and compare the results.'
 		),
-		llm=ChatBrowserUse(model='bu-2-0-mini-preview'),
+		llm=ChatOpenAI(model='gpt-4.1-mini'),
 		browser=browser,
 	)
 

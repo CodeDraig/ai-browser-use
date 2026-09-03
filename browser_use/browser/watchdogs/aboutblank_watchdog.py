@@ -177,7 +177,7 @@ class AboutBlankWatchdog(BaseWatchdog):
 
 					// Create the image element
 					const img = document.createElement('img');
-					img.src = 'https://cf.browser-use.com/logo.svg';
+						img.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="200" height="120" viewBox="0 0 200 120"%3E%3Crect width="200" height="120" rx="20" fill="%23ff6b35"/%3E%3Ctext x="100" y="76" text-anchor="middle" font-family="sans-serif" font-size="52" font-weight="700" fill="white"%3EBU%3C/text%3E%3C/svg%3E';
 					img.alt = 'Browser-Use';
 					img.style.width = '200px';
 					img.style.height = 'auto';

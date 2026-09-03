@@ -6,7 +6,6 @@ Browser Use natively supports 15+ LLM providers. Most providers accept any model
 
 | Provider | Class | Env Variable |
 |----------|-------|--------------|
-| Browser Use Cloud | `ChatBrowserUse` | `BROWSER_USE_API_KEY` |
 | OpenAI | `ChatOpenAI` | `OPENAI_API_KEY` |
 | Anthropic | `ChatAnthropic` | `ANTHROPIC_API_KEY` |
 | Google Gemini | `ChatGoogle` | `GOOGLE_API_KEY` |
@@ -22,18 +21,11 @@ Browser Use natively supports 15+ LLM providers. Most providers accept any model
 | OCI (Oracle) | `ChatOCIRaw` | OCI config file |
 | LiteLLM | `ChatLiteLLM` | Provider-specific |
 
-## Recommendations by Use Case
+## Choosing a model
 
-Based on our [benchmark of real-world browser tasks](https://browser-use.com/posts/what-model-to-use):
-
-- **Maximum performance**: Browser Use Cloud `bu-ultra` — 78% accuracy, ~14 tasks/hour
-- **Best open-source + cloud LLM**: `ChatBrowserUse(model='bu-2-0')` — 63.3% accuracy, outperforms every standalone frontier model
-- **Best standalone model**: `claude-opus-4-6` — 62% accuracy, excels at custom JavaScript and structured data extraction
-- **Best value**: `claude-sonnet-4-6` — 59% accuracy, near-opus quality at lower cost
-- **Fast + capable**: `gemini-3-1-pro` — 59.3% accuracy
+Model availability changes frequently. Choose a provider, pass its current model identifier explicitly, and verify the model in that provider's documentation.
 
 ## Table of Contents
-- [Browser Use Cloud (Recommended)](#browser-use-cloud)
 - [OpenAI](#openai)
 - [Anthropic](#anthropic)
 - [Google Gemini](#google-gemini)
@@ -51,27 +43,6 @@ Based on our [benchmark of real-world browser tasks](https://browser-use.com/pos
 - [OpenAI-Compatible APIs](#openai-compatible-apis)
 
 ---
-
-## Browser Use Cloud
-
-Optimized for browser automation — highest accuracy, fastest speed, lowest token cost.
-
-```python
-from browser_use import Agent, ChatBrowserUse
-
-llm = ChatBrowserUse()                              # bu-2-0 (default, 'bu-latest' tracks it)
-llm = ChatBrowserUse(model='bu-2-0-mini-preview')   # Cheaper per token, opt-in while in preview
-```
-
-**Env:** `BROWSER_USE_API_KEY` — get at https://cloud.browser-use.com/new-api-key
-
-**Models & Pricing (per 1M tokens):**
-| Model | Input | Cached | Output |
-|-------|-------|--------|--------|
-| bu-2-0 (default, premium) | $0.60 | $0.06 | $3.50 |
-| bu-2-0-mini-preview (opt-in) | $0.15 | $0.15 | $1.50 |
-| bu-1-0 (redirects to bu-2-0) | $0.60 | $0.06 | $3.50 |
-| browser-use/bu-30b-a3b-preview (OSS) | — | — | — |
 
 ## OpenAI
 
@@ -143,7 +114,7 @@ llm = ChatAnthropicBedrock(model="us.anthropic.claude-sonnet-4-20250514-v1:0", a
 
 **Env:** `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION` | [Available models](https://docs.aws.amazon.com/bedrock/latest/userguide/model-ids.html)
 
-Supports profiles, IAM roles, SSO via standard AWS credential chain. Install with `pip install "browser-use[aws]"`.
+Supports profiles, IAM roles, SSO via the standard AWS credential chain. Enable the `aws` extra on this Browser Use source installation.
 
 ## DeepSeek
 
@@ -238,7 +209,7 @@ llm = ChatOCIRaw(
 )
 ```
 
-Requires `~/.oci/config` setup and `pip install "browser-use[oci]"`. [Available models](https://docs.oracle.com/en-us/iaas/Content/generative-ai/imported-models.htm). Auth types: `API_KEY`, `INSTANCE_PRINCIPAL`, `RESOURCE_PRINCIPAL`.
+Requires `~/.oci/config` setup and the `oci` extra enabled on this Browser Use source installation. [Available models](https://docs.oracle.com/en-us/iaas/Content/generative-ai/imported-models.htm). Auth types: `API_KEY`, `INSTANCE_PRINCIPAL`, `RESOURCE_PRINCIPAL`.
 
 ## LiteLLM (100+ Providers)
 
@@ -276,4 +247,4 @@ llm = ChatOpenAI(model="deepseek/deepseek-r1", base_url="https://api.novita.ai/v
 **Env:** `NOVITA_API_KEY`
 
 ### LangChain
-See example at [examples/models/langchain](https://github.com/browser-use/browser-use/tree/main/examples/models/langchain).
+See example at [examples/models/langchain](https://github.com/CodeDraig/ai-browser-use/tree/main/examples/models/langchain).

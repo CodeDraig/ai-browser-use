@@ -4,12 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import re
 from functools import cached_property
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, Self, cast, overload
-from urllib.parse import urlparse
-from uuid import UUID
+from typing import TYPE_CHECKING, Any, Literal, Self, cast
 
 from bubus import EventBus
 from cdp_use import CDPClient
@@ -20,11 +17,9 @@ from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 from uuid_extensions import uuid7str
 
 from browser_use.browser.cdp import BrowserCDP
-from browser_use.browser.cloud.cloud import CloudBrowserClient
 
 # CDP logging is now handled by setup_logging() in logging_config.py
 # It automatically sets CDP logs to the same level as browser_use logs
-from browser_use.browser.cloud.views import CreateBrowserRequest, ProxyCountryCode
 from browser_use.browser.connection import BrowserConnection
 from browser_use.browser.event_bus import ResilientEventBus as _ResilientEventBus
 from browser_use.browser.events import (
@@ -39,12 +34,7 @@ from browser_use.browser.events import (
 )
 from browser_use.browser.lifecycle import BrowserLifecycle
 from browser_use.browser.navigation import BrowserNavigation
-from browser_use.browser.profile import (
-	CLOUD_PROXY_UNSET,
-	BrowserProfile,
-	ProxySettings,
-	resolve_browser_profile,
-)
+from browser_use.browser.profile import BrowserProfile, ProxySettings, resolve_browser_profile
 from browser_use.browser.views import BrowserStateSummary, TabInfo
 from browser_use.browser.watchdogs.registry import WatchdogRegistry
 from browser_use.dom.browser_state import BrowserDomState
@@ -56,7 +46,6 @@ if TYPE_CHECKING:
 	from browser_use.actor.page import Page
 	from browser_use.browser.demo_mode import DemoMode
 	from browser_use.browser.session_manager import CDPSession, Target
-	from browser_use.browser.watchdogs.captcha_watchdog import CaptchaWaitResult
 
 DEFAULT_BROWSER_PROFILE = BrowserProfile()
 
@@ -94,100 +83,6 @@ class BrowserSession(BaseModel):
 		revalidate_instances='never',  # resets private attrs on every model rebuild
 	)
 
-	# Overload 1: Cloud browser mode (use cloud-specific params)
-	@overload
-	def __init__(
-		self,
-		*,
-		# Cloud browser params - use these for cloud mode
-		cloud_profile_id: UUID | str | None = None,
-		cloud_proxy_country_code: ProxyCountryCode | None = None,
-		cloud_timeout: int | None = None,
-		use_cloud: bool | None = None,
-		cloud_browser_params: CreateBrowserRequest | None = None,
-		# Common params that work with cloud
-		id: str | None = None,
-		headers: dict[str, str] | None = None,
-		allowed_domains: list[str] | None = None,
-		prohibited_domains: list[str] | None = None,
-		keep_alive: bool | None = None,
-		minimum_wait_page_load_time: float | None = None,
-		wait_for_network_idle_page_load_time: float | None = None,
-		wait_between_actions: float | None = None,
-		captcha_solver: bool | None = None,
-		auto_download_pdfs: bool | None = None,
-		cookie_whitelist_domains: list[str] | None = None,
-		cross_origin_iframes: bool | None = None,
-		highlight_elements: bool | None = None,
-		dom_highlight_elements: bool | None = None,
-		paint_order_filtering: bool | None = None,
-		max_iframes: int | None = None,
-		max_iframe_depth: int | None = None,
-	) -> None: ...
-
-	# Overload 2: Local browser mode (use local browser params)
-	@overload
-	def __init__(
-		self,
-		*,
-		# Core configuration for local
-		id: str | None = None,
-		cdp_url: str | None = None,
-		browser_profile: BrowserProfile | None = None,
-		# Local browser launch params
-		executable_path: str | Path | None = None,
-		headless: bool | None = None,
-		user_data_dir: str | Path | None = None,
-		args: list[str] | None = None,
-		downloads_path: str | Path | None = None,
-		# Common params
-		headers: dict[str, str] | None = None,
-		allowed_domains: list[str] | None = None,
-		prohibited_domains: list[str] | None = None,
-		keep_alive: bool | None = None,
-		minimum_wait_page_load_time: float | None = None,
-		wait_for_network_idle_page_load_time: float | None = None,
-		wait_between_actions: float | None = None,
-		auto_download_pdfs: bool | None = None,
-		cookie_whitelist_domains: list[str] | None = None,
-		cross_origin_iframes: bool | None = None,
-		highlight_elements: bool | None = None,
-		dom_highlight_elements: bool | None = None,
-		paint_order_filtering: bool | None = None,
-		max_iframes: int | None = None,
-		max_iframe_depth: int | None = None,
-		# All other local params
-		env: dict[str, str | float | bool] | None = None,
-		ignore_default_args: list[str] | Literal[True] | None = None,
-		channel: str | None = None,
-		chromium_sandbox: bool | None = None,
-		devtools: bool | None = None,
-		traces_dir: str | Path | None = None,
-		accept_downloads: bool | None = None,
-		permissions: list[str] | None = None,
-		user_agent: str | None = None,
-		screen: dict | None = None,
-		viewport: dict | None = None,
-		no_viewport: bool | None = None,
-		device_scale_factor: float | None = None,
-		record_har_content: str | None = None,
-		record_har_mode: str | None = None,
-		record_har_path: str | Path | None = None,
-		record_video_dir: str | Path | None = None,
-		record_video_framerate: int | None = None,
-		record_video_size: dict | None = None,
-		storage_state: str | Path | dict[str, Any] | None = None,
-		disable_security: bool | None = None,
-		deterministic_rendering: bool | None = None,
-		proxy: ProxySettings | None = None,
-		enable_default_extensions: bool | None = None,
-		captcha_solver: bool | None = None,
-		window_size: dict | None = None,
-		window_position: dict | None = None,
-		filter_highlight_ids: bool | None = None,
-		profile_directory: str | None = None,
-	) -> None: ...
-
 	def __init__(
 		self,
 		# Core configuration
@@ -195,10 +90,6 @@ class BrowserSession(BaseModel):
 		cdp_url: str | None = None,
 		is_local: bool = False,
 		browser_profile: BrowserProfile | None = None,
-		# Cloud browser params (don't mix with local browser params)
-		cloud_profile_id: UUID | str | None = None,
-		cloud_proxy_country_code: ProxyCountryCode | None = CLOUD_PROXY_UNSET,  # type: ignore[assignment]
-		cloud_timeout: int | None = None,
 		# BrowserProfile fields that can be passed directly
 		# From BrowserConnectArgs
 		headers: dict[str, str] | None = None,
@@ -232,9 +123,6 @@ class BrowserSession(BaseModel):
 		# From BrowserNewContextArgs
 		storage_state: str | Path | dict[str, Any] | None = None,
 		# BrowserProfile specific fields
-		## Cloud Browser Fields
-		use_cloud: bool | None = None,
-		cloud_browser_params: CreateBrowserRequest | None = None,
 		## Other params
 		disable_security: bool | None = None,
 		deterministic_rendering: bool | None = None,
@@ -243,7 +131,6 @@ class BrowserSession(BaseModel):
 		keep_alive: bool | None = None,
 		proxy: ProxySettings | None = None,
 		enable_default_extensions: bool | None = None,
-		captcha_solver: bool | None = None,
 		window_size: dict | None = None,
 		window_position: dict | None = None,
 		minimum_wait_page_load_time: float | None = None,
@@ -274,20 +161,13 @@ class BrowserSession(BaseModel):
 				'__class__',
 				'browser_profile',
 				'id',
-				'cloud_profile_id',
-				'cloud_proxy_country_code',
-				'cloud_timeout',
 			]
 			and v is not None
-			and v is not CLOUD_PROXY_UNSET
 		}
 
 		resolved_browser_profile = resolve_browser_profile(
 			browser_profile=browser_profile,
 			cdp_url=cdp_url,
-			cloud_profile_id=cloud_profile_id,
-			cloud_proxy_country_code=cloud_proxy_country_code,
-			cloud_timeout=cloud_timeout,
 			profile_kwargs=profile_kwargs,
 		)
 
@@ -391,16 +271,6 @@ class BrowserSession(BaseModel):
 		except Exception:
 			return False
 
-	async def wait_if_captcha_solving(self, timeout: float | None = None) -> CaptchaWaitResult | None:
-		"""Wait if a captcha is currently being solved by the browser proxy.
-
-		Returns:
-			A CaptchaWaitResult if we had to wait, or None if no captcha was in progress.
-		"""
-		if self.watchdogs.captcha is not None:
-			return await self.watchdogs.captcha.wait_if_captcha_solving(timeout=timeout)
-		return None
-
 	@property
 	def is_reconnecting(self) -> bool:
 		"""Whether a WebSocket reconnection attempt is currently in progress."""
@@ -472,7 +342,6 @@ class BrowserSession(BaseModel):
 	_downloaded_files: list[str] = PrivateAttr(default_factory=list)  # Track files downloaded during this session
 	_closed_popup_messages: list[str] = PrivateAttr(default_factory=list)  # Store messages from auto-closed JavaScript dialogs
 
-	_cloud_browser_client: CloudBrowserClient = PrivateAttr(default_factory=lambda: CloudBrowserClient())
 	_demo_mode: DemoMode | None = PrivateAttr(default=None)
 
 	# WebSocket reconnection state
@@ -747,14 +616,6 @@ class BrowserSession(BaseModel):
 				self.logger.warning(f'FileDownloadedEvent has no path: {event}')
 			else:
 				self.logger.debug(f'File already tracked: {event.path}')
-
-	def _cloud_session_id_from_cdp_url(self) -> str | None:
-		"""Derive cloud browser session ID from a Browser Use CDP URL."""
-		if not self.cdp_url:
-			return None
-		host = urlparse(self.cdp_url).hostname or ''
-		match = re.match(r'^([0-9a-fA-F-]{36})\.cdp\d+\.browser-use\.com$', host)
-		return match.group(1) if match else None
 
 	# region - ========== CDP-based replacements for browser_context operations ==========
 	@property

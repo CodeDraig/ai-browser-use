@@ -36,7 +36,7 @@ How to Verify This Yourself, that there is no data logging:
 - Network monitoring: Run with network monitoring tools
 - Firewall rules: Block all domains except Azure OpenAI and your target sites
 
-Contact us if you need help with this: support@browser-use.com
+Open a GitHub issue if you need help with this.
 """
 
 import asyncio
@@ -61,7 +61,7 @@ llm = ChatAzureOpenAI(model='gpt-4.1-mini', api_key=api_key, azure_endpoint=azur
 task = 'Find the founders of the sensitive company_name'
 
 # Configuration Browser (optional)
-browser_profile = BrowserProfile(allowed_domains=['*.google.com', 'browser-use.com'], enable_default_extensions=False)
+browser_profile = BrowserProfile(allowed_domains=['*.google.com', 'example.com'], enable_default_extensions=False)
 
 # Sensitive data is scoped to the domain where it may be used. Values are filtered from LLM input.
 # By default we pass screenshots to the LLM which can contain your information. Set use_vision=False to disable this.

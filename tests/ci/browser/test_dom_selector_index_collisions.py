@@ -94,7 +94,7 @@ def test_session_lookup_keeps_selector_and_backend_identity_separate():
 	"""Action messages and coordinate lookup resolve the intended session-local node."""
 	main_input = _node('input', node_id=1, backend_node_id=5, session_id='main')
 	iframe_input = _node('input', node_id=2, backend_node_id=5, session_id='iframe')
-	session = BrowserSession(browser_profile=BrowserProfile(use_cloud=False))
+	session = BrowserSession(browser_profile=BrowserProfile())
 	session.dom_state.update_cached_selector_map({5: main_input, 101: iframe_input})
 
 	assert session.dom_state.get_selector_index(iframe_input) == 101
@@ -111,7 +111,7 @@ def test_file_input_discovery_uses_dom_state_ownership():
 	trigger.parent_node = root
 	file_input.parent_node = root
 
-	session = BrowserSession(browser_profile=BrowserProfile(use_cloud=False))
+	session = BrowserSession(browser_profile=BrowserProfile())
 	assert session.dom_state.is_file_input(file_input)
 	assert session.dom_state.find_file_input_near_element(trigger) is file_input
 
@@ -119,9 +119,7 @@ def test_file_input_discovery_uses_dom_state_ownership():
 @pytest.mark.asyncio
 async def test_dom_state_creates_and_removes_highlights(monkeypatch):
 	node = _node('button', node_id=1, backend_node_id=1, session_id='main')
-	session = BrowserSession(
-		browser_profile=BrowserProfile(use_cloud=False, highlight_elements=True, dom_highlight_elements=True)
-	)
+	session = BrowserSession(browser_profile=BrowserProfile(highlight_elements=True, dom_highlight_elements=True))
 	expressions: list[str] = []
 
 	async def evaluate(*, params, session_id):
@@ -227,7 +225,7 @@ def test_screenshot_overlay_uses_selector_index(monkeypatch):
 async def test_interaction_highlight_uses_the_nodes_cdp_session(monkeypatch):
 	"""The transient action highlight must resolve coordinates in the node's OOPIF session."""
 	iframe_input = _node('input', node_id=2, backend_node_id=5, session_id='iframe')
-	session = BrowserSession(browser_profile=BrowserProfile(use_cloud=False))
+	session = BrowserSession(browser_profile=BrowserProfile())
 	iframe_cdp_session = SimpleNamespace(session_id='iframe')
 	resolved_nodes: list[EnhancedDOMTreeNode] = []
 
@@ -255,7 +253,7 @@ async def test_actor_prompt_element_uses_the_selected_nodes_session(monkeypatch)
 	iframe_input = _node('input', node_id=2, backend_node_id=5, session_id='iframe')
 	serialized_state = _serialize([main_input, iframe_input])
 	root = _node('html', node_id=100, backend_node_id=100, session_id='main')
-	session = BrowserSession(browser_profile=BrowserProfile(use_cloud=False))
+	session = BrowserSession(browser_profile=BrowserProfile())
 	session._cdp_client_root = cast(Any, SimpleNamespace())
 
 	class FakeSerializer:

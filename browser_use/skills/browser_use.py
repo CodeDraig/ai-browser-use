@@ -14,16 +14,6 @@ OPENCLAW_METADATA_LINES = (
 	'    "openclaw":',
 	'      {',
 	'        "requires": { "bins": ["browser-use"] },',
-	'        "install":',
-	'          [',
-	'            {',
-	'              "id": "uv",',
-	'              "kind": "uv",',
-	'              "package": "browser-use",',
-	'              "bins": ["browser-use"],',
-	'              "label": "Install Browser Use CLI (uv)",',
-	'            },',
-	'          ],',
 	'      },',
 	'  }',
 )
@@ -61,8 +51,6 @@ def as_browser_use_skill(text: str) -> str:
 			1,
 			'description: "Direct browser control via CDP for web interaction: automation, scraping, testing, screenshots, and site/app work."',
 		)
-	if not any(line.startswith('homepage:') for line in lines):
-		lines.append('homepage: https://browser-use.com')
 	if not any(line.startswith('metadata:') for line in lines):
 		lines.extend(OPENCLAW_METADATA_LINES)
 
@@ -83,7 +71,5 @@ def skill_text() -> str:
 	try:
 		text = resources.files('browser_harness').joinpath('SKILL.md').read_text(encoding='utf-8')
 	except ModuleNotFoundError as exc:
-		raise RuntimeError(
-			'The Browser Use skill relies on the browser-harness package. Install browser-use again or install `browser-harness`.'
-		) from exc
+		raise RuntimeError('The bundled browser harness is missing. Reinstall this Browser Use artifact.') from exc
 	return as_browser_use_skill(text)

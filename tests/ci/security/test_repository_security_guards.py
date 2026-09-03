@@ -8,6 +8,104 @@ from pathlib import Path
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 
 
+def test_hosted_browser_use_service_surface_is_absent():
+	"""The open-source package must not retain hidden hosted-service entry points."""
+	removed_paths = (
+		REPOSITORY_ROOT / 'CLOUD.md',
+		REPOSITORY_ROOT / 'examples' / 'cloud',
+		REPOSITORY_ROOT / 'examples' / 'sandbox',
+		REPOSITORY_ROOT / 'skills' / 'cloud',
+		REPOSITORY_ROOT / 'skills' / 'qa',
+		REPOSITORY_ROOT / 'skills' / 'x402',
+		REPOSITORY_ROOT / 'browser_use' / 'browser' / 'cloud' / 'cloud.py',
+		REPOSITORY_ROOT / 'browser_use' / 'browser' / 'cloud' / 'views.py',
+		REPOSITORY_ROOT / 'browser_use' / 'llm' / 'browser_use' / 'chat.py',
+		REPOSITORY_ROOT / 'browser_use' / 'sandbox' / 'sandbox.py',
+		REPOSITORY_ROOT / 'browser_use' / 'sync' / 'auth.py',
+		REPOSITORY_ROOT / 'browser_use' / 'skills' / 'service.py',
+		REPOSITORY_ROOT / 'browser_use' / 'agent' / 'system_prompts' / 'system_prompt_browser_use.md',
+		REPOSITORY_ROOT / 'browser_use' / 'agent' / 'system_prompts' / 'system_prompt_browser_use_flash.md',
+		REPOSITORY_ROOT / 'browser_use' / 'agent' / 'system_prompts' / 'system_prompt_browser_use_no_thinking.md',
+		REPOSITORY_ROOT / 'vendor' / 'browser-harness' / 'src' / 'browser_harness' / 'auth.py',
+		REPOSITORY_ROOT / 'server.json',
+	)
+	assert not any(path.exists() for path in removed_paths)
+
+	scanned_roots = (
+		REPOSITORY_ROOT / 'browser_use',
+		REPOSITORY_ROOT / 'bin',
+		REPOSITORY_ROOT / 'examples',
+		REPOSITORY_ROOT / '.github',
+		REPOSITORY_ROOT / 'scripts',
+		REPOSITORY_ROOT / 'skills',
+		REPOSITORY_ROOT / 'vendor' / 'browser-harness',
+	)
+	scanned_files = (
+		REPOSITORY_ROOT / '.env.example',
+		REPOSITORY_ROOT / 'AGENTS.md',
+		REPOSITORY_ROOT / 'CLAUDE.md',
+		REPOSITORY_ROOT / 'Dockerfile',
+		REPOSITORY_ROOT / 'README.md',
+		REPOSITORY_ROOT / 'pyproject.toml',
+	)
+	forbidden = (
+		'browser-use' + '.com',
+		'BROWSER_USE_' + 'API_KEY',
+		'Chat' + 'BrowserUse',
+		'browser_use_' + 'sdk',
+		'use_' + 'cloud',
+		'start_' + 'remote_daemon',
+		'is_' + 'browser_use_model',
+		'system_prompt_' + 'browser_use',
+		'bu-' + '2-0',
+		'bu-' + '1-0',
+		'bu-' + 'latest',
+		'bu-' + '1.0',
+		'provider == ' + "'browser-use'",
+		'pypi.org/pypi/browser-use',
+		'uv add browser-use',
+		'uvx browser-use',
+		'uv tool install --python 3.12 --upgrade --force browser-use',
+		'pip install browser-use',
+		'pip install -U browser-use',
+		'"package": "browser-use"',
+		'raw.githubusercontent.com/browser-use/template-library',
+		'pypi.org/pypi/browser-harness',
+		'uv tool upgrade browser-harness',
+		'browser-harness --update',
+		'Install or upgrade browser-harness',
+	)
+	paths = [path for root in scanned_roots for path in root.rglob('*') if path.is_file()]
+	paths.extend(scanned_files)
+	for path in paths:
+		if path.suffix not in {
+			'.cfg',
+			'.env',
+			'.html',
+			'.ini',
+			'.js',
+			'.json',
+			'.md',
+			'.mdx',
+			'.py',
+			'.sh',
+			'.toml',
+			'.txt',
+			'.yaml',
+			'.yml',
+		} and path.name not in {'Dockerfile', 'PKG-INFO', '.env.example'}:
+			continue
+		content = path.read_text(encoding='utf-8')
+		for token in forbidden:
+			assert token not in content, path
+
+	agent_source = '\n'.join(
+		path.read_text(encoding='utf-8') for path in (REPOSITORY_ROOT / 'browser_use' / 'agent').rglob('*.py')
+	)
+	assert "'browser-use/'" not in agent_source
+	assert '"browser-use/"' not in agent_source
+
+
 def test_removed_agent_skills_and_browser_close_examples_do_not_return():
 	"""Python documentation must use the retained Agent and Browser facades."""
 	documentation_roots = (

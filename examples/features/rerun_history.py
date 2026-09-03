@@ -52,14 +52,14 @@ import asyncio
 from pathlib import Path
 
 from browser_use import Agent
-from browser_use.llm import ChatBrowserUse
+from browser_use.llm import ChatOpenAI
 
 
 async def main():
 	# Example task to demonstrate history saving and rerunning
 	history_file = Path('agent_history.json')
 	task = 'Go to https://browser-use.github.io/stress-tests/challenges/reference-number-form.html and fill the form with example data and submit and extract the refernence number.'
-	llm = ChatBrowserUse(model='bu-2-0-mini-preview')
+	llm = ChatOpenAI(model='gpt-4.1-mini')
 
 	# Optional: Use custom LLMs for AI features during rerun
 	# Uncomment to use a custom LLM:

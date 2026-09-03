@@ -1,7 +1,6 @@
 import os
 import sys
 import time
-import urllib.request
 
 # Windows default stdout/stderr encoding is cp1252
 # which can't encode the 🐴 marker helpers prepend to tab titles (or anything
@@ -14,22 +13,14 @@ for _stream in (sys.stdout, sys.stderr):
         except Exception:
             pass
 
-from . import auth, recorder
+from . import recorder
 from .admin import (
-    NAME,
     _version,
-    daemon_alive,
     ensure_daemon,
-    list_cloud_profiles,  # noqa: F401 - exposed to executed CLI programs
     list_local_profiles,  # noqa: F401 - exposed to executed CLI programs
-    print_update_banner,
     restart_daemon,
     run_doctor,
     run_doctor_fix_snap,
-    run_update,
-    start_remote_daemon,
-    stop_remote_daemon,  # noqa: F401 - exposed to executed CLI programs
-    sync_local_profile,  # noqa: F401 - exposed to executed CLI programs
 )
 from .helpers import *  # noqa: F403 - CLI helpers are intentionally pre-imported
 
@@ -51,10 +42,6 @@ Commands:
   browser-harness doctor           same as --doctor
   browser-harness doctor --fix-snap   print how to fix Snap Chromium blocking CDP (Linux)
   browser-harness mac-approve         approve Chrome's macOS remote debugging sheet
-  browser-harness auth login          sign in to Browser Use Cloud for cloud browsers
-  browser-harness auth login --device-code   sign in from SSH/headless environments
-  browser-harness auth status         show Browser Use Cloud auth state
-  browser-harness auth logout         remove stored Browser Use Cloud auth
   browser-harness skill               print the browser-harness skill text
   browser-harness recordings          show recording status and recent sessions
   browser-harness recordings --latest   print the newest recording directory
@@ -63,7 +50,6 @@ Commands:
   browser-harness video init <recording>      prepare a recording for editing
   browser-harness video review <recording>    compile and review the video
   browser-harness video export <recording> --reviewed   export a verified MP4
-  browser-harness --update [-y]    pull the latest version (agents: pass -y)
   browser-harness --reload         stop the daemon so next call picks up code changes
 """
 
@@ -72,36 +58,6 @@ USAGE = """Usage:
   print(page_info())
   PY
 """
-
-
-# Probe /json/version (not a bare TCP connect) so a non-Chrome process bound to
-# 9222/9223 doesn't masquerade as Chrome and skip the cloud bootstrap. Mirrors
-# daemon.py's fallback probe.
-def _local_chrome_listening():
-    for port in (9222, 9223):
-        try:
-            urllib.request.urlopen(f"http://127.0.0.1:{port}/json/version", timeout=0.3).close()
-            return True
-        except OSError:
-            pass
-    return False
-
-
-# BU_CDP_URL / BU_CDP_WS are documented to override local Chrome discovery
-# (install.md:58-59), so they must also block cloud auto-bootstrap. Without this
-# guard, start_remote_daemon() in admin.py overwrites BU_CDP_WS in the daemon
-# env with a cloud WebSocket URL, silently replacing the user's explicit endpoint
-# *and* billing them for a cloud browser they never asked for.
-def _explicit_cdp_configured():
-    return bool(os.environ.get("BU_CDP_URL") or os.environ.get("BU_CDP_WS"))
-
-
-def _cloud_auth_configured():
-    try:
-        auth.get_browser_use_api_key()
-        return True
-    except (auth.CloudAuthRequired, auth.AuthError, OSError):
-        return False
 
 
 def _print_skill():
@@ -157,8 +113,6 @@ def _run(args):
             print("usage: browser-harness doctor [--fix-snap]", file=sys.stderr)
             sys.exit(2)
         sys.exit(run_doctor())
-    if args and args[0] == "auth":
-        sys.exit(auth.run_auth_cli(args[1:]))
     if args and args[0] == "mac-approve":
         from . import macos
 
@@ -197,9 +151,6 @@ def _run(args):
         from . import video
 
         sys.exit(video.run_cli(args[1:]))
-    if args and args[0] == "--update":
-        yes = any(a in {"-y", "--yes"} for a in args[1:])
-        sys.exit(run_update(yes=yes))
     if args and args[0] == "--reload":
         restart_daemon()
         print("daemon stopped — will restart fresh on next call")
@@ -213,27 +164,11 @@ def _run(args):
             sys.exit(USAGE)
     else:
         sys.exit(USAGE)
-    print_update_banner()
-    # Auto-bootstrap a cloud browser is opt-in via BU_AUTOSPAWN — BROWSER_USE_API_KEY alone
-    # is not enough, since the key is commonly set for unrelated reasons (profile sync,
-    # cloud API calls, parent agents managing their own session). An explicit BU_CDP_URL
-    # or BU_CDP_WS also blocks the spawn so we honour the precedence install.md promises.
-    cloud_admin = code.lstrip().startswith(("start_remote_daemon(", "stop_remote_daemon("))
-    if not cloud_admin:
-        if (
-            not daemon_alive()
-            and not _local_chrome_listening()
-            and not _explicit_cdp_configured()
-            and _cloud_auth_configured()
-            and os.environ.get("BU_AUTOSPAWN")
-        ):
-            start_remote_daemon(NAME)
-        try:
-            ensure_daemon()
-        except RuntimeError as e:
-            # Setup/permission errors are instructions for calling agent
-            print(f"browser-harness: {e}", file=sys.stderr)
-            sys.exit(1)
+    try:
+        ensure_daemon()
+    except RuntimeError as e:
+        print(f"browser-harness: {e}", file=sys.stderr)
+        sys.exit(1)
     _install_helper_trace()
     exec(code, globals())
 
