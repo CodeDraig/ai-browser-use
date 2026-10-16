@@ -94,6 +94,7 @@ Documentation = "https://github.com/CodeDraig/ai-browser-use/tree/main/docs"
 
 [project.scripts]
 browser-use = "browser_use.cli:main"  # Browser Use CLI for agents
+browser-harness = "browser_harness.run:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -120,6 +121,13 @@ ignore = [
     "W291",
 ] # TODO: determine if adding timeouts to all the unbounded async functions is needed / worth-it so we can un-ignore ASYNC109
 unfixable = ["E101", "E402", "E501", "F841", "E731"]
+
+[tool.ruff.lint.per-file-ignores]
+# Preserve the imported harness's compact statements during consolidation.
+"browser_harness/*.py" = ["E701", "E702"]
+"tests/harness/**/*.py" = ["E701", "E702"]
+# This module deliberately exports helpers to CLI and MCP execution namespaces.
+"browser_harness/helpers.py" = ["E701", "E702", "F401"]
 
 [tool.ruff.format]
 quote-style = "single"
@@ -169,13 +177,15 @@ include = [
     "browser_use/py.typed",
     "browser_use/dom/**/*.js",
     "browser_use/browser/*.js",
-	"vendor/browser-harness/src/browser_harness/**",
+	"browser_harness/**",
     "!tests/**/*.py",
+    "!**/__pycache__/**",
+    "!**/*.pyc",
     "!debug/*",
 ]
 
-[tool.hatch.build.targets.wheel.force-include]
-"vendor/browser-harness/src/browser_harness" = "browser_harness"
+[tool.hatch.build.targets.wheel]
+packages = ["browser_use", "browser_harness"]
 
 [tool.pytest.ini_options]
 timeout = 300

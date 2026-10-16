@@ -54,6 +54,7 @@ credentials.json
 token.json
 
 !docs/docs.json
+!browser_harness/extension_assets/*.json
 
 
 temp-profile-*

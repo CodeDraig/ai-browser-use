@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_SOURCE_PATH = ROOT / 'vendor' / 'browser-harness' / 'src' / 'browser_harness' / 'SKILL.md'
+DEFAULT_SOURCE_PATH = ROOT / 'browser_harness' / 'SKILL.md'
 DEFAULT_REPO_OUTPUT_PATH = ROOT / 'skills' / 'browser-use' / 'SKILL.md'
 DEFAULT_PACKAGE_OUTPUT_PATH = ROOT / 'browser_use' / 'skills' / 'browser-use' / 'SKILL.md'
 

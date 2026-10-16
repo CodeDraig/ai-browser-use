@@ -84,6 +84,22 @@ PY
 
 The bundled browser harness discovers a local Chromium-family browser. Set `BU_CDP_URL` or `BU_CDP_WS` to use an explicit CDP endpoint instead.
 
+`browser-use` and `browser-harness` share the first-party `browser_harness` package in this repository. There is no separate harness installation or vendored implementation.
+
+### Existing Chrome and Firefox profiles
+
+The extension backend connects to an existing logged-in browser profile without a remote-debugging port. Run `browser-use extension --help` for setup, then select it with `BH_BACKEND=extension` and a dedicated `BU_NAME`. It supports page reading, form interaction, screenshots, tracked downloads, and verified file transfers. Firefox uses synthetic input and does not expose arbitrary JavaScript or CDP.
+
+Research helpers `capture_research`, `save_research_download`, and `extract_document` preserve originals and produce manifests, hashes, and receipts. Local OCR/PDF extraction uses optional Tesseract and Poppler commands. See [extension setup and research workflows](docs/browser-harness.md).
+
+### Recordings and video
+
+Recording remains opt-in: `browser-use recordings enable`, or call `start_recording(name, title=...)` and `stop_recording()` from a CLI or CLI MCP session. CDP, Chrome extension, and Firefox extension actions use the same recording format. Existing recordings and preferences remain usable.
+
+Use `browser-use video init RECORDING`, `browser-use video review RECORDING`, and `browser-use video export RECORDING --reviewed` to make an MP4. Export requires `ffmpeg` and `ffprobe`. The renderer requires Chromium/CDP; when recording through an extension, set `BH_VIDEO_CDP_URL` to a separate local Chromium endpoint for review/export. Rendering uses an isolated daemon/runtime and disables its own recording.
+
+See [recording and video editing](docs/browser-recording-video.md) for edit briefs and review/export steps, and [consolidation validation](tests/harness/VALIDATION.md) for tested workflows and limits.
+
 ## Configuration
 
 Common environment variables:

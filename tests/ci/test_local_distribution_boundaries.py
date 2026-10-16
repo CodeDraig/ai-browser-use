@@ -35,6 +35,10 @@ def test_wheel_and_sdist_bundle_the_cleaned_harness(tmp_path):
 
 	assert 'browser_harness/run.py' in names
 	assert 'browser_harness/SKILL.md' in names
+	assert 'browser_harness/extension_assets/chrome.json' in names
+	assert 'browser_harness/extension_assets/firefox.json' in names
+	assert 'browser_harness/video-template.html' in names
+	assert 'browser_harness/research.py' in names
 	assert 'browser_use/cli_templates/default.py' in names
 	assert not any(
 		requirement.startswith(('browser-harness', 'browser-use')) for requirement in metadata.get_all('Requires-Dist', [])
@@ -46,7 +50,7 @@ def test_wheel_and_sdist_bundle_the_cleaned_harness(tmp_path):
 	sdist_path = next(tmp_path.glob('browser_use-*.tar.gz'))
 	with tarfile.open(sdist_path, 'r:gz') as sdist:
 		names = set(sdist.getnames())
-	assert any(name.endswith('/vendor/browser-harness/src/browser_harness/run.py') for name in names)
+	assert any(name.endswith('/browser_harness/run.py') for name in names)
 
 
 def test_project_metadata_has_no_external_harness_or_public_package_selector():

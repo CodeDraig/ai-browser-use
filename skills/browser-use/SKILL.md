@@ -100,7 +100,7 @@ browser-use recordings --latest
 
 Use it only if timestamps and pages match; otherwise say the work was not
 captured. Never reenact a completed task. For a video, follow
-[make-video.md](https://github.com/browser-use/browser-harness/blob/main/interaction-skills/make-video.md).
+[make-video.md](https://github.com/CodeDraig/ai-browser-use/blob/main/docs/browser-recording-video.md).
 If sub-agents are available, they may handle post-production from the exact
 recording path while the main agent returns the task result.
 
@@ -145,3 +145,11 @@ If you get stuck on a browser mechanic, check https://github.com/browser-use/bro
 Only applies when `BH_DOMAIN_SKILLS=1`. Otherwise ignore domain skills.
 
 When enabled, search `$BH_AGENT_WORKSPACE/domain-skills/<host>/` before inventing an approach. `goto_url(...)` returns up to 10 skill filenames for the navigated host.
+
+## Existing-profile extensions and research
+
+Use `browser-use extension --help` to set up Chrome or Firefox, then `BH_BACKEND=extension` with a dedicated `BU_NAME`. Select a connected profile and tab explicitly. Use `browser_capabilities()` before choosing operations; Firefox has no arbitrary `js()` or raw CDP. Use `read_page()`, `click_element(selector)`, and the ordinary form/screenshot helpers. See [setup and capabilities](https://github.com/CodeDraig/ai-browser-use/blob/main/docs/browser-harness.md).
+
+Use `capture_research(destination)` and `save_research_download(download_id, destination, source=...)` for hashed source bundles and citation receipts. `extract_document(source, destination)` uses local Poppler/Tesseract when installed; OCR remains uncorrected. Inspect returned status and verify quotations against originals. Downloads must be completed and tracked before retrieval.
+
+Recording works with both extension browsers. Video rendering needs Chromium CDP: set `BH_VIDEO_CDP_URL` to a separate local rendering browser when using extensions. Existing recording paths and opt-in preferences remain in place. `http_get()` is local and never inherits browser login.

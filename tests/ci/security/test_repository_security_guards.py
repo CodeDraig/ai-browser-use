@@ -26,7 +26,7 @@ def test_hosted_browser_use_service_surface_is_absent():
 		REPOSITORY_ROOT / 'browser_use' / 'agent' / 'system_prompts' / 'system_prompt_browser_use.md',
 		REPOSITORY_ROOT / 'browser_use' / 'agent' / 'system_prompts' / 'system_prompt_browser_use_flash.md',
 		REPOSITORY_ROOT / 'browser_use' / 'agent' / 'system_prompts' / 'system_prompt_browser_use_no_thinking.md',
-		REPOSITORY_ROOT / 'vendor' / 'browser-harness' / 'src' / 'browser_harness' / 'auth.py',
+		REPOSITORY_ROOT / 'browser_harness' / 'auth.py',
 		REPOSITORY_ROOT / 'server.json',
 	)
 	assert not any(path.exists() for path in removed_paths)
@@ -38,7 +38,7 @@ def test_hosted_browser_use_service_surface_is_absent():
 		REPOSITORY_ROOT / '.github',
 		REPOSITORY_ROOT / 'scripts',
 		REPOSITORY_ROOT / 'skills',
-		REPOSITORY_ROOT / 'vendor' / 'browser-harness',
+		REPOSITORY_ROOT / 'browser_harness',
 	)
 	scanned_files = (
 		REPOSITORY_ROOT / '.env.example',
@@ -150,11 +150,11 @@ def test_removed_tracking_surfaces_do_not_return():
 	assert not (REPOSITORY_ROOT / 'browser_use' / 'observability.py').exists()
 	assert not (REPOSITORY_ROOT / 'browser_use' / 'agent' / 'cloud_events.py').exists()
 	assert not (REPOSITORY_ROOT / 'browser_use' / 'sync' / 'service.py').exists()
-	assert not (REPOSITORY_ROOT / 'vendor' / 'browser-harness' / 'src' / 'browser_harness' / 'telemetry.py').exists()
+	assert not (REPOSITORY_ROOT / 'browser_harness' / 'telemetry.py').exists()
 
 	scanned = [
 		REPOSITORY_ROOT / 'browser_use',
-		REPOSITORY_ROOT / 'vendor' / 'browser-harness',
+		REPOSITORY_ROOT / 'browser_harness',
 		REPOSITORY_ROOT / 'pyproject.toml',
 		REPOSITORY_ROOT / '.github' / 'workflows',
 	]
@@ -597,5 +597,5 @@ def test_removed_cli_config_and_dom_compatibility_surfaces_are_absent():
 		assert removed not in source, removed
 
 	assert set(__import__('tomllib').loads((REPOSITORY_ROOT / 'pyproject.toml').read_text())['project']['scripts']) == {
-		'browser-use'
+		'browser-use', 'browser-harness'
 	}
